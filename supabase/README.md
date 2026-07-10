@@ -2,6 +2,12 @@
 
 Supabase is optional. BADSCIENTIST runs locally without it, but Supabase is the easiest free-start path for syncing memory, settings, action history, expenses, and file metadata across devices.
 
+The account/sync contract now matches the Android build in:
+
+```text
+/Users/emilshirokikh/Downloads/MADSCIENTIST/agentos/ACCOUNT_AND_SYNC.md
+```
+
 ## Is the database already set up?
 
 No live cloud database is bundled with this repo.
@@ -10,6 +16,7 @@ What is already done:
 
 - `schema.sql` defines the tables.
 - `migrations/20260710000000_initial_sync_schema.sql` mirrors the schema for Supabase CLI workflows.
+- `migrations/20260710010000_android_account_contract.sql` adds the Android-compatible account tables.
 - `config.toml` defines a local Supabase development stack.
 - RLS is enabled for every user-owned table.
 - Policies restrict each user to their own rows.
@@ -23,7 +30,7 @@ What you still need to do:
 
 - Create your own Supabase project.
 - Run `schema.sql`.
-- Enable email magic-link auth.
+- Enable email/password auth.
 - Paste the project URL and publishable/anon key into the app.
 - Sign in before syncing.
 
@@ -33,6 +40,10 @@ Tables created by `schema.sql`:
 
 | Table | Purpose |
 | --- | --- |
+| `profiles` | One auth-linked profile row per Supabase user |
+| `brain_items` | Android-compatible generic brain sync table for memories, profile, chats, papers, settings, vault pointers |
+| `vault_items` | End-to-end encrypted sensitive vault rows |
+| `vault_meta` | Encrypted vault key metadata and KDF params |
 | `devices` | Registered user devices and platforms |
 | `settings` | Portable SlyOS settings |
 | `memory_items` | Brain memories, facts, messages, documents, screens |
@@ -59,7 +70,7 @@ The client app must use a publishable/anon key only.
 3. Paste the full contents of `schema.sql`.
 4. Run it.
 5. Open Authentication settings.
-6. Enable email magic links.
+6. Enable the Email provider and password signups/signins.
 7. Copy the project URL.
 8. Copy the publishable or anon client key.
 9. Copy the Postgres connection string if you want CLI setup from this repo.
@@ -111,9 +122,10 @@ Option A: use the UI.
    - Supabase URL
    - publishable/anon key
    - your email
+   - your account password
 4. Click `Configure`.
-5. Click `Magic link`.
-6. Open the email and sign in.
+5. Click `Sign up` once for a new account.
+6. Click `Sign in`.
 7. Use `Push brain` or `Pull brain`.
 
 Option B: use `.env`.
@@ -137,6 +149,10 @@ After running `schema.sql`, check that these tables exist in the `public` schema
 
 ```text
 devices
+profiles
+brain_items
+vault_items
+vault_meta
 settings
 memory_items
 action_log
@@ -149,7 +165,7 @@ Then verify:
 - RLS is enabled on every table.
 - `authenticated` has select/insert/update/delete grants for the tables.
 - Policies include an ownership check using `auth.uid() = user_id`.
-- You can sign in through magic link.
+- You can sign up and sign in with email/password.
 - `Push brain` works only after sign-in.
 - `Pull brain` returns only your own rows.
 
@@ -184,7 +200,7 @@ The table probably lacks grants or is not exposed to the Data API. Re-run `schem
 
 The user ID on the row does not match the signed-in user. Use the app sync client, which fills `user_id` from the authenticated session.
 
-`relation public.memory_items does not exist`
+`relation public.brain_items does not exist`
 
 The schema was not run in this project, or it was run in the wrong Supabase project.
 

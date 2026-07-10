@@ -1,6 +1,18 @@
 import { cryptoId } from "./actions";
 
-export type MemoryKind = "fact" | "message" | "setting" | "expense" | "document" | "screen";
+export type MemoryKind =
+  | "profile"
+  | "fact"
+  | "memory"
+  | "message"
+  | "chat"
+  | "paper"
+  | "setting"
+  | "expense"
+  | "document"
+  | "doc"
+  | "screen"
+  | "vault";
 
 export interface MemoryItem {
   id: string;
@@ -22,6 +34,7 @@ export interface SettingsItem {
 export interface MemoryStore {
   list(): MemoryItem[];
   add(input: Omit<MemoryItem, "id" | "createdAt" | "updatedAt">): MemoryItem;
+  upsert(item: MemoryItem): MemoryItem;
   search(query: string): MemoryItem[];
   remove(id: string): void;
   listSettings(): SettingsItem[];
@@ -63,6 +76,24 @@ export function createBrowserMemoryStore(storage: Storage, namespace = "badscien
       writeMemory([item, ...readMemory()]);
       return item;
     },
+    upsert(item) {
+      const existing = readMemory();
+      const index = existing.findIndex((candidate) => candidate.id === item.id);
+      if (index === -1) {
+        writeMemory([item, ...existing]);
+        return item;
+      }
+      const current = existing[index];
+      if (!current) {
+        writeMemory([item, ...existing]);
+        return item;
+      }
+      if (current.updatedAt.localeCompare(item.updatedAt) >= 0) return current;
+      const next = [...existing];
+      next[index] = item;
+      writeMemory(next);
+      return item;
+    },
     search(query) {
       const needle = query.trim().toLowerCase();
       if (!needle) return this.list();
@@ -95,4 +126,3 @@ function safeJson<T>(raw: string | null, fallback: T): T {
     return fallback;
   }
 }
-

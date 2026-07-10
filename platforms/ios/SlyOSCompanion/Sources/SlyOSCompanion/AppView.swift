@@ -150,7 +150,8 @@ struct SettingsView: View {
                 Section("Sync") {
                     Text("Supabase URL")
                     Text("Publishable key")
-                    Text("Magic link email")
+                    Text("Email")
+                    Text("Password")
                 }
 
                 Section("Platform limits") {
@@ -167,4 +168,3 @@ struct SettingsView: View {
         .environment(AppState())
         .environment(AppIntentRouter.shared)
 }
-

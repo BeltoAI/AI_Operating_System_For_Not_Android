@@ -8,6 +8,8 @@ export interface SupabaseSyncConfig {
 
 export interface BrainSyncClient {
   signInWithOtp(email: string): Promise<void>;
+  signUpWithPassword(email: string, password: string): Promise<void>;
+  signInWithPassword(email: string, password: string): Promise<void>;
   signOut(): Promise<void>;
   currentUserId(): Promise<string | null>;
   pushMemory(items: MemoryItem[]): Promise<void>;
@@ -35,6 +37,16 @@ class SupabaseBrainSync implements BrainSyncClient {
     if (error) throw error;
   }
 
+  async signUpWithPassword(email: string, password: string): Promise<void> {
+    const { error } = await this.client.auth.signUp({ email, password });
+    if (error) throw error;
+  }
+
+  async signInWithPassword(email: string, password: string): Promise<void> {
+    const { error } = await this.client.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+  }
+
   async signOut(): Promise<void> {
     const { error } = await this.client.auth.signOut();
     if (error) throw error;
@@ -48,62 +60,80 @@ class SupabaseBrainSync implements BrainSyncClient {
 
   async pushMemory(items: MemoryItem[]): Promise<void> {
     const userId = await this.requireUser();
+    if (!items.length) return;
     const rows = items.map((item) => ({
-      id: item.id,
       user_id: userId,
       kind: item.kind,
+      client_id: item.id,
       title: item.title,
-      body: item.body,
-      tags: item.tags,
-      source: item.source,
-      created_at: item.createdAt,
-      updated_at: item.updatedAt
+      body: item.kind === "vault" ? "Encrypted vault item synced. Unlock on a trusted device." : item.body,
+      data: {
+        tags: item.tags,
+        source: item.source,
+        createdAt: item.createdAt,
+        originalBody: item.kind === "vault" ? item.body : undefined
+      },
+      updated_at: toEpochMs(item.updatedAt),
+      deleted: false
     }));
-    const { error } = await this.client.from("memory_items").upsert(rows, { onConflict: "id" });
+    const { error } = await this.client.from("brain_items").upsert(rows, { onConflict: "user_id,kind,client_id" });
     if (error) throw error;
   }
 
   async pullMemory(limit = 200): Promise<MemoryItem[]> {
+    const userId = await this.requireUser();
     const { data, error } = await this.client
-      .from("memory_items")
-      .select("id, kind, title, body, tags, source, created_at, updated_at")
+      .from("brain_items")
+      .select("kind, client_id, title, body, data, updated_at, created_at, deleted")
+      .eq("user_id", userId)
+      .neq("kind", "setting")
+      .eq("deleted", false)
       .order("updated_at", { ascending: false })
       .limit(limit);
     if (error) throw error;
     return (data ?? []).map((row) => ({
-      id: row.id,
+      id: row.client_id,
       kind: row.kind,
       title: row.title,
-      body: row.body,
-      tags: row.tags ?? [],
-      source: row.source,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at
+      body: row.kind === "vault" ? "Encrypted vault item synced. Unlock on a trusted device." : (row.body ?? ""),
+      tags: row.data?.tags ?? [],
+      source: row.data?.source ?? "supabase",
+      createdAt: row.data?.createdAt ?? row.created_at,
+      updatedAt: fromEpochMs(row.updated_at)
     })) as MemoryItem[];
   }
 
   async pushSettings(settings: SettingsItem[]): Promise<void> {
     const userId = await this.requireUser();
+    if (!settings.length) return;
     const rows = settings.map((item) => ({
       user_id: userId,
-      key: item.key,
-      value: item.value,
-      updated_at: item.updatedAt
+      kind: "setting",
+      client_id: item.key,
+      title: item.key,
+      body: JSON.stringify(item.value),
+      data: { value: item.value },
+      updated_at: toEpochMs(item.updatedAt),
+      deleted: false
     }));
-    const { error } = await this.client.from("settings").upsert(rows, { onConflict: "user_id,key" });
+    const { error } = await this.client.from("brain_items").upsert(rows, { onConflict: "user_id,kind,client_id" });
     if (error) throw error;
   }
 
   async pullSettings(): Promise<SettingsItem[]> {
+    const userId = await this.requireUser();
     const { data, error } = await this.client
-      .from("settings")
-      .select("key, value, updated_at")
-      .order("key", { ascending: true });
+      .from("brain_items")
+      .select("client_id, body, data, updated_at")
+      .eq("user_id", userId)
+      .eq("kind", "setting")
+      .eq("deleted", false)
+      .order("client_id", { ascending: true });
     if (error) throw error;
     return (data ?? []).map((row) => ({
-      key: row.key,
-      value: row.value,
-      updatedAt: row.updated_at
+      key: row.client_id,
+      value: row.data?.value ?? safeJson(row.body),
+      updatedAt: fromEpochMs(row.updated_at)
     }));
   }
 
@@ -114,3 +144,20 @@ class SupabaseBrainSync implements BrainSyncClient {
   }
 }
 
+function toEpochMs(value: string): number {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function fromEpochMs(value: number): string {
+  return new Date(value).toISOString();
+}
+
+function safeJson(value: string | null): unknown {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}

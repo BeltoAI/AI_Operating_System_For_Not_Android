@@ -8,6 +8,7 @@ const checks = [];
 
 checkFile("supabase/schema.sql");
 checkFile("supabase/migrations/20260710000000_initial_sync_schema.sql");
+checkFile("supabase/migrations/20260710010000_android_account_contract.sql");
 checkFile("supabase/config.toml");
 checkCommand("psql");
 checkCommand("supabase", false);
@@ -22,6 +23,10 @@ const schema = readFileSync(join(repoRoot, "supabase/schema.sql"), "utf8");
 record("schema_has_rls", /enable row level security/i.test(schema), "schema.sql enables RLS");
 record("schema_has_auth_uid_policies", /auth\.uid\(\).*user_id/is.test(schema), "schema.sql restricts rows to auth.uid() = user_id");
 record("schema_has_authenticated_grants", /grant select, insert, update, delete .* to authenticated/i.test(schema), "schema.sql grants authenticated Data API access");
+record("schema_has_android_brain_items", /create table if not exists public\.brain_items/i.test(schema), "schema.sql includes Android-compatible brain_items");
+record("schema_has_profiles", /create table if not exists public\.profiles/i.test(schema), "schema.sql includes auth-linked profiles");
+record("schema_has_vault_tables", /public\.vault_items/is.test(schema) && /public\.vault_meta/is.test(schema), "schema.sql includes encrypted vault tables");
+record("schema_has_signup_trigger", /on_auth_user_created/is.test(schema), "schema.sql auto-creates profiles on signup");
 
 const readyForLiveApply = Boolean(process.env.SUPABASE_DB_URL);
 record(

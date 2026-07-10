@@ -628,10 +628,12 @@ function renderSetup(): string {
           <input id="supabase-url" placeholder="https://project-ref.supabase.co" />
           <input id="supabase-key" placeholder="publishable key" />
           <input id="supabase-email" placeholder="you@example.com" />
+          <input id="supabase-password" type="password" placeholder="account password" />
         </div>
         <div class="button-pair">
           <button id="sync-configure" type="button">Configure</button>
-          <button id="sync-login" type="button">Magic link</button>
+          <button id="sync-signup" type="button">Sign up</button>
+          <button id="sync-login" type="button">Sign in</button>
           <button id="sync-push" type="button">Push brain</button>
           <button id="sync-pull" type="button">Pull brain</button>
         </div>
@@ -816,7 +818,7 @@ function wireEvents(): void {
       syncStatus = "Missing URL or key.";
     } else {
       syncClient = createBrainSyncClient({ url, publishableKey });
-      syncStatus = "Configured. Send a magic link next.";
+      syncStatus = "Configured. Sign up or sign in next.";
     }
     render();
   });
@@ -824,9 +826,20 @@ function wireEvents(): void {
   document.querySelector("#sync-login")?.addEventListener("click", () => {
     void syncAction(async () => {
       const email = document.querySelector<HTMLInputElement>("#supabase-email")?.value.trim();
-      if (!syncClient || !email) throw new Error("Configure sync and enter email first.");
-      await syncClient.signInWithOtp(email);
-      syncStatus = "Magic link sent.";
+      const password = document.querySelector<HTMLInputElement>("#supabase-password")?.value;
+      if (!syncClient || !email || !password) throw new Error("Configure sync, email, and password first.");
+      await syncClient.signInWithPassword(email, password);
+      syncStatus = "Signed in.";
+    });
+  });
+
+  document.querySelector("#sync-signup")?.addEventListener("click", () => {
+    void syncAction(async () => {
+      const email = document.querySelector<HTMLInputElement>("#supabase-email")?.value.trim();
+      const password = document.querySelector<HTMLInputElement>("#supabase-password")?.value;
+      if (!syncClient || !email || !password) throw new Error("Configure sync, email, and password first.");
+      await syncClient.signUpWithPassword(email, password);
+      syncStatus = "Account created. Sign in if email confirmation is off, or confirm email first.";
     });
   });
 
@@ -844,15 +857,11 @@ function wireEvents(): void {
       if (!syncClient) throw new Error("Configure sync first.");
       const remote = await syncClient.pullMemory();
       for (const item of remote) {
-        memoryStore.add({
-          kind: item.kind,
-          title: item.title,
-          body: item.body,
-          tags: item.tags,
-          source: item.source
-        });
+        memoryStore.upsert(item);
       }
-      syncStatus = `Pulled ${remote.length} memories.`;
+      const settings = await syncClient.pullSettings();
+      for (const item of settings) memoryStore.setSetting(item.key, item.value);
+      syncStatus = `Pulled ${remote.length} brain item(s) and ${settings.length} setting(s).`;
     });
   });
 

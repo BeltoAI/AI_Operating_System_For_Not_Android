@@ -199,7 +199,9 @@ Already in this repo:
 
 - `supabase/schema.sql` creates the sync tables.
 - `supabase/migrations/20260710000000_initial_sync_schema.sql` is ready for Supabase CLI migration workflows.
+- `supabase/migrations/20260710010000_android_account_contract.sql` aligns the DB with Android's account/sync contract.
 - `supabase/config.toml` supports a local Supabase stack.
+- Android-compatible `profiles`, `brain_items`, `vault_items`, and `vault_meta` tables are included.
 - Row Level Security is enabled on all user data tables.
 - Policies restrict rows by `auth.uid() = user_id`.
 - Explicit `grant` statements expose the intended tables to authenticated users.
@@ -212,7 +214,7 @@ Still required for every real deployment:
 
 1. Create a Supabase project.
 2. Run `supabase/schema.sql` in the Supabase SQL editor.
-3. Enable email magic links.
+3. Enable email/password auth.
 4. Copy the project URL and publishable/anon key.
 5. Use those values in the desktop shell Setup screen or local `.env`.
 6. Sign in before pushing or pulling memory.
