@@ -1,0 +1,55 @@
+# macOS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+apikey.properties
+local.properties
+*.keystore
+*.jks
+*.p8
+*.mobileprovision
+*.xcconfig
+
+# Private user data
+private-data/*
+!private-data/.gitkeep
+**/linkedin_data/
+**/*device_report*.txt
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+
+# Node / web
+node_modules/
+dist/
+build/
+.next/
+.vite/
+coverage/
+
+# Rust / Tauri
+target/
+src-tauri/target/
+Cargo.lock
+
+# Xcode / iOS / macOS
+DerivedData/
+*.xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.ipa
+
+# Android reference artifacts
+.gradle/
+*.apk
+*.aab
+
+# Logs
+*.log
+
