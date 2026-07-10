@@ -45,7 +45,7 @@ release-artifacts/slyos-desktop-agent-<version>-<commit>.zip
 release-artifacts/slyos-desktop-agent-<version>-<commit>/
 ```
 
-This artifact contains the localhost bridge for macOS, Linux, and Windows. It is not a visual app by itself; it gives the web/PWA shell explicit, token-gated desktop actions such as opening URLs/apps, taking screenshots where supported, listing/writing allowed files, and optional command execution.
+This artifact contains the localhost bridge for macOS, Linux, and Windows. It is not a visual app by itself; it gives the web/PWA shell explicit, token-gated desktop actions such as opening URLs/apps, observing the screen, reading the frontmost app, clicking, typing, hotkeys, clipboard, waiting, listing/writing allowed files, and optional command execution.
 
 ## Native artifact status
 

@@ -20,6 +20,7 @@ Every platform adapter should accept the same high-level action envelope.
 
 - `read_only`: search, memory lookup, local file metadata lookup
 - `local_write`: save note, create draft, update local memory
+- `device_control`: granted screen-control session, pointer/keyboard/clipboard operation
 - `external_open`: open URL, open app, open file
 - `external_send`: SMS, email, chat, post, calendar invite
 - `destructive`: delete, unsubscribe, remove, overwrite
@@ -30,6 +31,7 @@ Every platform adapter should accept the same high-level action envelope.
 
 Actions in these classes must require explicit user confirmation:
 
+- `device_control`
 - `external_send`
 - `destructive`
 - `financial`
@@ -57,9 +59,12 @@ Platform adapters can be stricter but not looser.
 - `expense_lookup`
 - `expense_record`
 - `camera_look`
+- `observe_screen`
 - `screen_read`
 - `screen_operate`
+- `pointer_click`
+- `type_text`
+- `hotkey`
 - `run_command`
 - `create_mini_app`
 - `revise_mini_app`
-

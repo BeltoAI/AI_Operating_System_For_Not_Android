@@ -21,6 +21,7 @@ What works today:
 - A runnable SlyOS-style web shell for local development.
 - Installable PWA metadata, offline shell caching, and a web release artifact builder.
 - A localhost desktop device-agent bridge for macOS, Linux, and Windows actions.
+- Prompt-to-device control primitives: observe screen, front app, clipboard, click, type, hotkey, scroll, and wait.
 - Shared TypeScript agent contracts for memory, planning, actions, and sync.
 - A Supabase schema, migration, local config, readiness check, and DB apply script for optional cross-device memory and settings sync.
 - iOS SwiftUI/App Intents source scaffolding.
@@ -99,6 +100,16 @@ http://127.0.0.1:4317
 
 The bridge gives desktop platforms controlled native capabilities that the browser cannot provide directly: open URL/app, screenshot where supported, list/write allowed files, and optional command execution when explicitly enabled.
 
+Enable Android-style device takeover primitives:
+
+```bash
+SLYOS_AGENT_TOKEN=choose-a-local-secret \
+SLYOS_ENABLE_DEVICE_CONTROL=1 \
+npm run agent
+```
+
+The takeover loop is documented in `docs/DEVICE_TAKEOVER.md`: observe the screen, execute one primitive action, wait, observe again, and stop before sends, destructive changes, money, credentials, account settings, or ambiguity.
+
 ## Open specific screens
 
 The desktop shell supports direct screen routes so contributors can test the UI without clicking through every flow:
@@ -127,6 +138,7 @@ Use browser device emulation or resize the window to test phone, tablet, and des
 BADSCIENTIST/
   docs/
     ANDROID_BASELINE.md       Android reference and why it stays separate
+    DEVICE_TAKEOVER.md        Prompt-to-device automation loop and OS limits
     PARITY_MATRIX.md          What each OS can and cannot match
     ROADMAP.md                Build phases
     REPO_SETUP.md             Repo setup notes
@@ -251,7 +263,9 @@ Desktop operation path:
 
 - `platforms/desktop-agent` runs the local OS bridge.
 - `shared/tool-contracts/LOCAL_DEVICE_BRIDGE.md` defines the endpoint/action contract.
+- `docs/DEVICE_TAKEOVER.md` defines the observe/click/type/verify loop.
 - File writes are restricted to allowed roots.
+- Pointer/keyboard/clipboard control requires `SLYOS_ENABLE_DEVICE_CONTROL=1`.
 - Shell execution is off unless `SLYOS_ENABLE_SHELL=1`.
 
 The shell is intentionally responsive:

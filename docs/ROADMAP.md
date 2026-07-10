@@ -8,7 +8,7 @@
 - Create per-platform capability maps.
 - Add smoke/parity test descriptions before implementation.
 
-Status: started. The shared TypeScript core, SlyOS-matched desktop shell, installable PWA metadata, desktop device-agent bridge, release artifact builder, Supabase schema/migration/config, direct screen QA routes, responsive web shell, and iOS source scaffold now exist.
+Status: started. The shared TypeScript core, SlyOS-matched desktop shell, installable PWA metadata, desktop device-agent bridge, prompt-to-device takeover primitives, release artifact builder, Supabase schema/migration/config, direct screen QA routes, responsive web shell, and iOS source scaffold now exist.
 
 ## Phase 1: Shared core contracts
 
@@ -38,6 +38,8 @@ Current implementation: Vite/TypeScript shell that mirrors the main Android SlyO
 Current release path: `npm run release:all` builds a downloadable PWA ZIP plus a desktop-agent ZIP. The PWA is installable through Safari/Chrome/Edge today; the desktop-agent gives macOS/Linux/Windows a local OS-action bridge. Native desktop installers require Rust/Tauri or another native wrapper.
 
 Current operation path: `npm run agent` starts a localhost desktop bridge for macOS/Linux/Windows actions that browsers cannot perform directly. The bridge requires a bearer token, restricts file writes to allowed roots, and keeps shell execution disabled by default.
+
+Current takeover path: `SLYOS_ENABLE_DEVICE_CONTROL=1 npm run agent` enables observe-screen, front-app, clipboard, pointer click, keyboard typing, hotkeys, scroll where supported, and wait primitives. The planned agent loop is observe -> act -> wait -> observe until done or a confirmation boundary is reached.
 
 ## Phase 3: iOS companion
 

@@ -20,6 +20,7 @@ Closest parity surfaces:
 - memory search and recall
 - explicit action drafts
 - calendar and reminders with permission
+- App Intent / Shortcut handoff for tasks that need system action
 
 Known limits:
 
@@ -28,6 +29,8 @@ Known limits:
 - no general auto-reply layer across all apps
 - no arbitrary cross-app screen control
 - no background SMS automation
+
+Important takeover note: iOS cannot support Android-style whole-device click-through from a third-party app. The closest honest path is SlyOS-native flows, App Intents, Shortcuts, Share Extensions, widgets, URL schemes, notifications, camera/import, and explicit user handoff when the OS blocks automation.
 
 Next build step:
 
@@ -38,4 +41,3 @@ Next build step:
 5. Verify Shortcuts exposes `Ask SlyOS`, `Remember`, and `Memory`.
 
 The iOS build should be honest: a powerful companion, not a fake Android launcher.
-

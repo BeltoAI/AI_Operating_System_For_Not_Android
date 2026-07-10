@@ -1,6 +1,7 @@
 export type ActionRisk =
   | "read_only"
   | "local_write"
+  | "device_control"
   | "external_open"
   | "external_send"
   | "destructive"
@@ -26,8 +27,12 @@ export type ActionType =
   | "expense_lookup"
   | "expense_record"
   | "camera_look"
+  | "observe_screen"
   | "screen_read"
   | "screen_operate"
+  | "pointer_click"
+  | "type_text"
+  | "hotkey"
   | "run_command"
   | "create_mini_app"
   | "revise_mini_app";
@@ -54,6 +59,7 @@ export interface AgentPlan {
 }
 
 const confirmRisks = new Set<ActionRisk>([
+  "device_control",
   "external_send",
   "destructive",
   "financial",
@@ -127,10 +133,10 @@ export function planPrompt(prompt: string): AgentPlan {
 
   if (/\b(screen|app|click|tap|operate|open|control)\b/.test(lower)) {
     actions.push(
-      makeAction("screen_read", "Read current screen context", "read_only", { prompt: text }),
-      makeAction("screen_operate", "Plan safe screen operation", "external_open", { prompt: text })
+      makeAction("observe_screen", "Observe the active screen", "read_only", { prompt: text }),
+      makeAction("screen_operate", "Run a confirmation-gated device-control loop", "device_control", { prompt: text })
     );
-    notes.push("Desktop can use accessibility automation; iOS must use Shortcuts/App Intents or handoff.");
+    notes.push("Desktop can use local accessibility automation; iOS must use Shortcuts/App Intents or handoff.");
   }
 
   if (/\b(search|web|who won|weather|research|find)\b/.test(lower)) {

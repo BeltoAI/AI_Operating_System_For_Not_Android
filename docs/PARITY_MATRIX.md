@@ -18,6 +18,7 @@ Legend:
 | Notification reading | Same | No/Limited | Limited | Limited | Limited | Desktop adapters where permissions exist; iOS cannot mirror Android |
 | Auto-reply to messages | Same with safeguards | No/Limited | Limited | Limited | Limited | Draft-first everywhere except explicit platform APIs |
 | Screen reading | Same via AccessibilityService | Limited | Equivalent | Equivalent | Equivalent | iOS screenshot/share workflows; desktop accessibility APIs |
+| Prompt-to-device takeover loop | Same via AccessibilityService + gestures | No/Limited | Equivalent | Equivalent | Equivalent | Desktop observe/click/type/wait loop; iOS App Intents/Shortcuts/handoff |
 | Screen operation | Same via gestures | No/Limited | Equivalent | Equivalent | Equivalent | Desktop automation adapters; iOS Shortcuts/App Intents only |
 | Overlay brain button | Same | No | Equivalent | Equivalent | Equivalent | Desktop floating window/tray; iOS widgets/control surfaces |
 | SMS send | Same with confirmation | Limited | Limited | Limited | Limited | Use share sheets, mail/message compose, or companion workflows |
@@ -33,3 +34,4 @@ Legend:
 
 macOS, Linux, and Windows can be close functional siblings. iOS should be a high-quality companion, not a fake launcher clone.
 
+For the newest Android automation baseline, read `DEVICE_TAKEOVER.md`. The desktop target is Android-style observe -> act -> verify execution. iOS cannot expose arbitrary whole-device click-through to third-party apps, so its best path is native intent surfaces and explicit handoff.

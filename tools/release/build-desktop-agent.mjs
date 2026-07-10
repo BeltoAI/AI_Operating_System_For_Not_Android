@@ -62,10 +62,29 @@ function releaseMeta({ version, commit }) {
     artifactType: "desktop-agent",
     platforms: ["macos", "linux", "windows"],
     defaultUrl: "http://127.0.0.1:4317",
-    actions: ["open_url", "open_app", "screenshot", "list_dir", "write_file", "run_command"],
+    actions: [
+      "open_url",
+      "open_app",
+      "screenshot",
+      "observe_screen",
+      "get_frontmost_app",
+      "get_clipboard",
+      "set_clipboard",
+      "type_text",
+      "key_press",
+      "hotkey",
+      "pointer_move",
+      "pointer_click",
+      "scroll",
+      "wait",
+      "list_dir",
+      "write_file",
+      "run_command"
+    ],
     safety: {
       localhostOnly: true,
       bearerTokenRequired: true,
+      deviceControlRequiresOptIn: true,
       writeRootsRestricted: true,
       shellDisabledByDefault: true
     }
@@ -84,7 +103,7 @@ This artifact contains the local desktop bridge for macOS, Linux, and Windows. I
 
 \`\`\`bash
 cd desktop-agent
-SLYOS_AGENT_TOKEN=choose-a-local-secret node src/server.mjs
+SLYOS_AGENT_TOKEN=choose-a-local-secret SLYOS_ENABLE_DEVICE_CONTROL=1 node src/server.mjs
 \`\`\`
 
 Default URL:
@@ -97,6 +116,7 @@ http://127.0.0.1:4317
 
 - Listens on localhost only.
 - Requires \`Authorization: Bearer <token>\` for all non-health endpoints.
+- Pointer, keyboard, clipboard, and observe-loop actions require \`SLYOS_ENABLE_DEVICE_CONTROL=1\`.
 - File writes are restricted to \`SLYOS_ALLOWED_ROOTS\`.
 - Shell execution is disabled unless \`SLYOS_ENABLE_SHELL=1\`.
 - No delete endpoint exists.
@@ -107,6 +127,14 @@ http://127.0.0.1:4317
 curl http://127.0.0.1:4317/health
 curl -H 'Authorization: Bearer choose-a-local-secret' http://127.0.0.1:4317/capabilities
 \`\`\`
+
+## Device-control loop
+
+\`\`\`text
+observe_screen -> pointer_click/type_text/hotkey/scroll -> wait -> observe_screen
+\`\`\`
+
+Stop before external sends, destructive changes, financial actions, credentials, account settings, or ambiguous screens.
 
 Read \`LOCAL_DEVICE_BRIDGE.md\` for the action contract.
 `;
