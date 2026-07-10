@@ -15,3 +15,4 @@ Closest parity surfaces:
 
 macOS can get closer to Android-style operation than iOS because it exposes desktop automation and accessibility APIs.
 
+Current shared operation bridge: run `npm run agent` from the repo root to start the localhost desktop device agent.

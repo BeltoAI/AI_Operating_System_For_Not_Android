@@ -20,6 +20,7 @@ What works today:
 
 - A runnable SlyOS-style web shell for local development.
 - Installable PWA metadata, offline shell caching, and a web release artifact builder.
+- A localhost desktop device-agent bridge for macOS, Linux, and Windows actions.
 - Shared TypeScript agent contracts for memory, planning, actions, and sync.
 - A Supabase schema, migration, local config, readiness check, and DB apply script for optional cross-device memory and settings sync.
 - iOS SwiftUI/App Intents source scaffolding.
@@ -81,6 +82,20 @@ release-artifacts/slyos-web-pwa-<version>-<commit>.zip
 
 That ZIP is the current cross-device install path. Host the `app/` folder inside it, then install it as a PWA from Safari on iPhone/iPad or Chrome/Edge on desktop.
 
+Run the local desktop device bridge:
+
+```bash
+SLYOS_AGENT_TOKEN=choose-a-local-secret npm run agent
+```
+
+Default bridge URL:
+
+```text
+http://127.0.0.1:4317
+```
+
+The bridge gives desktop platforms controlled native capabilities that the browser cannot provide directly: open URL/app, screenshot where supported, list/write allowed files, and optional command execution when explicitly enabled.
+
 ## Open specific screens
 
 The desktop shell supports direct screen routes so contributors can test the UI without clicking through every flow:
@@ -125,6 +140,7 @@ BADSCIENTIST/
     tool-contracts/           Action schema and confirmation policy
   platforms/
     android-reference/        Notes only. Production Android is elsewhere.
+    desktop-agent/            Localhost OS action bridge for desktop platforms
     desktop-shell/            Runnable Vite/TypeScript shell
     ios/                      SwiftUI/App Intents source scaffold
     linux/                    Linux adapter notes
@@ -227,6 +243,13 @@ The web shell is meant to feel like SlyOS, not like a SaaS dashboard. Current ma
 - Dark listening/voice graph
 - Setup and Supabase sync controls
 - Apps/manual fallback surfaces
+
+Desktop operation path:
+
+- `platforms/desktop-agent` runs the local OS bridge.
+- `shared/tool-contracts/LOCAL_DEVICE_BRIDGE.md` defines the endpoint/action contract.
+- File writes are restricted to allowed roots.
+- Shell execution is off unless `SLYOS_ENABLE_SHELL=1`.
 
 The shell is intentionally responsive:
 

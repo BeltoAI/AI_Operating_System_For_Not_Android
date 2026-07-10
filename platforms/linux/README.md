@@ -18,3 +18,4 @@ Notes:
 - GNOME, KDE, and other desktop environments may need separate adapters.
 - Linux is likely the best platform for local models and terminal-heavy agent workflows.
 
+Current shared operation bridge: run `npm run agent` from the repo root to start the localhost desktop device agent.

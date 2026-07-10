@@ -8,7 +8,7 @@
 - Create per-platform capability maps.
 - Add smoke/parity test descriptions before implementation.
 
-Status: started. The shared TypeScript core, SlyOS-matched desktop shell, installable PWA metadata, release artifact builder, Supabase schema/migration/config, direct screen QA routes, responsive web shell, and iOS source scaffold now exist.
+Status: started. The shared TypeScript core, SlyOS-matched desktop shell, installable PWA metadata, desktop device-agent bridge, release artifact builder, Supabase schema/migration/config, direct screen QA routes, responsive web shell, and iOS source scaffold now exist.
 
 ## Phase 1: Shared core contracts
 
@@ -36,6 +36,8 @@ Target macOS, Linux, and Windows together.
 Current implementation: Vite/TypeScript shell that mirrors the main Android SlyOS surfaces: Boot, Lock, Home, Now, Sent for you, Reconnect, Memory, Memory settings, Mission, My network, Research, Cowork, Voice/listening, Apps, Setup, Look, Expenses, and Manual Mode. Native packaging and OS adapters are next.
 
 Current release path: `npm run release:web` builds a downloadable PWA ZIP. This is installable through Safari/Chrome/Edge today. Native desktop installers require Rust/Tauri or another native wrapper.
+
+Current operation path: `npm run agent` starts a localhost desktop bridge for macOS/Linux/Windows actions that browsers cannot perform directly. The bridge requires a bearer token, restricts file writes to allowed roots, and keeps shell execution disabled by default.
 
 ## Phase 3: iOS companion
 

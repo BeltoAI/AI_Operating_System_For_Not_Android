@@ -6,9 +6,11 @@
   "type": "module",
   "workspaces": [
     "shared/agent-core",
-    "platforms/desktop-shell"
+    "platforms/desktop-shell",
+    "platforms/desktop-agent"
   ],
   "scripts": {
+    "agent": "npm run start -w @badscientist/desktop-agent",
     "build": "npm run build --workspaces",
     "dev": "npm run dev -w @badscientist/desktop-shell",
     "db:check": "node tools/supabase/check-readiness.mjs",
