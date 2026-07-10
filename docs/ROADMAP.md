@@ -63,7 +63,7 @@ Current implementation: SwiftUI/App Intents source scaffold. Xcode project wirin
 - website download pages
 - platform-specific install instructions
 
-Current implementation: Supabase schema, migration, config, browser sync adapter, readiness checker, and DB apply script exist. Each user still needs to create their own Supabase project, run `supabase/schema.sql` or `npm run db:apply` with `SUPABASE_DB_URL`, enable magic-link auth, and configure a publishable client key.
+Current implementation: Supabase schema, migration, config, browser sync adapter, readiness checker, DB apply script, and live client probe exist. Each user still needs to create their own Supabase project, run `supabase/schema.sql` or `npm run db:apply` with `SUPABASE_DB_URL`, enable email/password auth, and configure a publishable client key.
 
 ## Current native blockers
 

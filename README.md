@@ -206,7 +206,7 @@ Already in this repo:
 - Policies restrict rows by `auth.uid() = user_id`.
 - Explicit `grant` statements expose the intended tables to authenticated users.
 - `shared/agent-core/src/supabaseSync.ts` contains the browser client sync adapter.
-- The desktop shell has a setup UI for URL, publishable key, magic-link auth, push brain, and pull brain.
+- The desktop shell has a setup UI for URL, publishable key, email/password auth, push brain, and pull brain.
 - `npm run db:check` checks local DB readiness without printing secrets.
 - `npm run db:apply` applies the schema when `SUPABASE_DB_URL` is set.
 
@@ -240,6 +240,8 @@ Fill it with your project values:
 ```bash
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_PUBLISHABLE_KEY=your-publishable-or-anon-key
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-or-anon-key
 ```
 
 The current browser shell also accepts those values at runtime from `Setup`.

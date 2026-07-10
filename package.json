@@ -15,6 +15,7 @@
     "dev": "npm run dev -w @badscientist/desktop-shell",
     "db:check": "node tools/supabase/check-readiness.mjs",
     "db:apply": "node tools/supabase/apply-schema.mjs",
+    "db:probe": "node tools/supabase/probe-live.mjs",
     "release:all": "npm run release:web && npm run release:desktop-agent",
     "release:desktop-agent": "node tools/release/build-desktop-agent.mjs",
     "release:web": "node tools/release/build-web-pwa.mjs",

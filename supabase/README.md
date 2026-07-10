@@ -22,7 +22,7 @@ What is already done:
 - Policies restrict each user to their own rows.
 - Explicit grants are included for authenticated Data API access.
 - The TypeScript sync client is implemented in `shared/agent-core/src/supabaseSync.ts`.
-- The desktop shell has runtime fields for Supabase URL, publishable key, magic-link auth, push, and pull.
+- The desktop shell has runtime fields for Supabase URL, publishable key, email/password auth, push, and pull.
 - `npm run db:check` verifies local readiness without printing secrets.
 - `npm run db:apply` applies the schema when `SUPABASE_DB_URL` is provided.
 
@@ -141,6 +141,8 @@ Fill in:
 ```bash
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_PUBLISHABLE_KEY=your-publishable-or-anon-key
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-or-anon-key
 ```
 
 ## Verify the schema
@@ -190,7 +192,7 @@ Useful Supabase docs:
 
 `Sign in before syncing memory or settings.`
 
-You configured the client but have not completed magic-link sign-in.
+You configured the client but have not completed email/password sign-in.
 
 `permission denied for table ...`
 

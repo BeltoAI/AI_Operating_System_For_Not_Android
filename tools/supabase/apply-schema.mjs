@@ -2,9 +2,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadDotEnv } from "./env.mjs";
 
 const repoRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const schemaPath = join(repoRoot, "supabase/schema.sql");
+loadDotEnv(repoRoot);
 
 if (!existsSync(schemaPath)) {
   throw new Error("Missing supabase/schema.sql.");

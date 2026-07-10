@@ -62,6 +62,8 @@ const memoryStore = createBrowserMemoryStore(window.localStorage, "slyos");
 const queriedRoot = document.querySelector<HTMLDivElement>("#app");
 if (!queriedRoot) throw new Error("Missing #app root.");
 const appRoot: HTMLDivElement = queriedRoot;
+const envSupabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? "";
+const envSupabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "";
 
 let screen: ShellScreen = "boot";
 let promptText = "";
@@ -70,6 +72,10 @@ let memoryAnswer = "";
 let lastPlan: AgentPlan | null = null;
 let syncClient: BrainSyncClient | null = null;
 let syncStatus = "not connected";
+let supabaseUrl = window.localStorage.getItem("slyos:supabaseUrl") ?? envSupabaseUrl;
+let supabasePublishableKey =
+  window.localStorage.getItem("slyos:supabasePublishableKey") ?? envSupabasePublishableKey;
+let supabaseEmail = window.localStorage.getItem("slyos:supabaseEmail") ?? "";
 let agentPaused = false;
 let deviceBridgeUrl = window.localStorage.getItem("slyos:deviceBridgeUrl") ?? "http://127.0.0.1:4317";
 let deviceBridgeToken = window.localStorage.getItem("slyos:deviceBridgeToken") ?? "";
@@ -625,9 +631,9 @@ function renderSetup(): string {
         <h3>Sync account</h3>
         <p>Optional Supabase memory/settings sync. Use only a publishable client key.</p>
         <div class="sync-grid">
-          <input id="supabase-url" placeholder="https://project-ref.supabase.co" />
-          <input id="supabase-key" placeholder="publishable key" />
-          <input id="supabase-email" placeholder="you@example.com" />
+          <input id="supabase-url" value="${escapeAttr(supabaseUrl)}" placeholder="https://project-ref.supabase.co" />
+          <input id="supabase-key" value="${escapeAttr(supabasePublishableKey)}" placeholder="publishable key" />
+          <input id="supabase-email" value="${escapeAttr(supabaseEmail)}" placeholder="you@example.com" />
           <input id="supabase-password" type="password" placeholder="account password" />
         </div>
         <div class="button-pair">
@@ -817,6 +823,10 @@ function wireEvents(): void {
     if (!url || !publishableKey) {
       syncStatus = "Missing URL or key.";
     } else {
+      supabaseUrl = url;
+      supabasePublishableKey = publishableKey;
+      window.localStorage.setItem("slyos:supabaseUrl", url);
+      window.localStorage.setItem("slyos:supabasePublishableKey", publishableKey);
       syncClient = createBrainSyncClient({ url, publishableKey });
       syncStatus = "Configured. Sign up or sign in next.";
     }
@@ -828,6 +838,8 @@ function wireEvents(): void {
       const email = document.querySelector<HTMLInputElement>("#supabase-email")?.value.trim();
       const password = document.querySelector<HTMLInputElement>("#supabase-password")?.value;
       if (!syncClient || !email || !password) throw new Error("Configure sync, email, and password first.");
+      supabaseEmail = email;
+      window.localStorage.setItem("slyos:supabaseEmail", email);
       await syncClient.signInWithPassword(email, password);
       syncStatus = "Signed in.";
     });
@@ -838,6 +850,8 @@ function wireEvents(): void {
       const email = document.querySelector<HTMLInputElement>("#supabase-email")?.value.trim();
       const password = document.querySelector<HTMLInputElement>("#supabase-password")?.value;
       if (!syncClient || !email || !password) throw new Error("Configure sync, email, and password first.");
+      supabaseEmail = email;
+      window.localStorage.setItem("slyos:supabaseEmail", email);
       await syncClient.signUpWithPassword(email, password);
       syncStatus = "Account created. Sign in if email confirmation is off, or confirm email first.";
     });

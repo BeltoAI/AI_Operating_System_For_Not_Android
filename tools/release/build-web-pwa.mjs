@@ -153,6 +153,6 @@ iOS does not allow this PWA to replace the launcher, read all notifications, or 
 
 ## Database
 
-Supabase is optional. To sync memory/settings across devices, create a Supabase project, run \`supabase/schema.sql\`, enable magic-link auth, and paste the publishable key in Setup.
+Supabase is optional. To sync memory/settings across devices, create a Supabase project, run \`supabase/schema.sql\`, enable email/password auth, and paste the publishable key in Setup.
 `;
 }
