@@ -52,6 +52,14 @@ SLYOS_ENABLE_DEVICE_CONTROL=1 \
 npm run agent
 ```
 
+In the web/PWA shell:
+
+1. Open `Setup`.
+2. Enter the local bridge URL and token.
+3. Click `Check bridge`.
+4. Ask a Home prompt that implies screen control, clicking, opening, or app operation.
+5. Use `Run device loop` from the Brain card to start the observe step.
+
 Shell execution is separate and remains disabled unless `SLYOS_ENABLE_SHELL=1`.
 
 ## Platform Reality

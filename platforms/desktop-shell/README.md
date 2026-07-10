@@ -88,8 +88,21 @@ Use these for quick QA and screenshots:
 - Apps
 - Manual mode
 - Setup and Supabase sync
+- Setup and local device bridge controls
 - Look
 - Expenses
+
+## Device bridge UI
+
+Start the local desktop agent:
+
+```bash
+SLYOS_AGENT_TOKEN=choose-a-local-secret \
+SLYOS_ENABLE_DEVICE_CONTROL=1 \
+npm run agent
+```
+
+Then open `Setup`, save the bridge URL/token, and run `Check bridge`. Prompts that include app/screen/click/open/control produce a Brain card with `Run device loop`, which calls `observe_screen` on the local bridge.
 
 ## Responsive behavior
 

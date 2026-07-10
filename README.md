@@ -110,6 +110,8 @@ npm run agent
 
 The takeover loop is documented in `docs/DEVICE_TAKEOVER.md`: observe the screen, execute one primitive action, wait, observe again, and stop before sends, destructive changes, money, credentials, account settings, or ambiguity.
 
+In the shell, open `Setup`, save the local bridge URL/token, then ask a prompt such as `open the active app and click through the setup`. When the plan includes device control, the Brain card exposes `Run device loop` to start the observe step through the local bridge.
+
 ## Open specific screens
 
 The desktop shell supports direct screen routes so contributors can test the UI without clicking through every flow:

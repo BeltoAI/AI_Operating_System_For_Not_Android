@@ -505,6 +505,24 @@ textarea {
   color: var(--accent);
 }
 
+.device-loop-button {
+  width: 100%;
+  margin: 10px 0 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 14px;
+  padding: 10px 14px;
+}
+
+.bridge-observation {
+  color: var(--soft);
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  margin-bottom: 8px;
+}
+
 .panel-screen {
   height: 100%;
   overflow: auto;

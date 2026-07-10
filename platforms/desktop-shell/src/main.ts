@@ -71,6 +71,10 @@ let lastPlan: AgentPlan | null = null;
 let syncClient: BrainSyncClient | null = null;
 let syncStatus = "not connected";
 let agentPaused = false;
+let deviceBridgeUrl = window.localStorage.getItem("slyos:deviceBridgeUrl") ?? "http://127.0.0.1:4317";
+let deviceBridgeToken = window.localStorage.getItem("slyos:deviceBridgeToken") ?? "";
+let deviceBridgeStatus = "device bridge not checked";
+let deviceBridgeObservation = "";
 
 const routeScreens = new Set<ShellScreen>([
   "boot",
@@ -307,6 +311,7 @@ function renderShortcut(shortcut: Shortcut): string {
 function renderBrainCard(plan: AgentPlan): string {
   const visibleActions = [...plan.actions].sort((a, b) => Number(b.requiresConfirmation) - Number(a.requiresConfirmation));
   const actionRows = visibleActions.map((action) => renderAction(action)).join("");
+  const hasDeviceLoop = visibleActions.some((action) => action.type === "screen_operate");
   return `
     <section class="brain-card">
       <div class="brain-head">
@@ -316,6 +321,12 @@ function renderBrainCard(plan: AgentPlan): string {
       <div class="brain-flow">
         ${actionRows}
       </div>
+      ${
+        hasDeviceLoop
+          ? `<button class="device-loop-button" type="button" data-device-loop="true">Run device loop</button>
+             ${deviceBridgeObservation ? `<div class="bridge-observation">${escapeHtml(deviceBridgeObservation)}</div>` : ""}`
+          : ""
+      }
       <div class="brain-note">${escapeHtml(plan.platformNotes[0] ?? "Everything routes through the brain.")}</div>
     </section>
   `;
@@ -627,6 +638,20 @@ function renderSetup(): string {
         <div class="caption-line">${escapeHtml(syncStatus)}</div>
       </section>
       <section class="setup-block">
+        <h3>Device control</h3>
+        <p>Local bridge for observe, click, type, hotkeys, clipboard, and app control.</p>
+        <div class="sync-grid">
+          <input id="device-bridge-url" value="${escapeAttr(deviceBridgeUrl)}" placeholder="http://127.0.0.1:4317" />
+          <input id="device-bridge-token" value="${escapeAttr(deviceBridgeToken)}" placeholder="agent token" />
+        </div>
+        <div class="button-pair">
+          <button id="device-save" type="button">Save</button>
+          <button id="device-check" type="button">Check bridge</button>
+          <button id="device-observe" type="button">Observe</button>
+        </div>
+        <div class="caption-line">${escapeHtml(deviceBridgeStatus)}</div>
+      </section>
+      <section class="setup-block">
         <h3>Bring in your data</h3>
         <p>WhatsApp .txt · LinkedIn messages.csv · Instagram/Telegram .json · PDFs · receipts.</p>
       </section>
@@ -742,6 +767,10 @@ function wireEvents(): void {
     render();
   });
 
+  document.querySelector("[data-device-loop]")?.addEventListener("click", () => {
+    void observeDeviceFromPrompt();
+  });
+
   document.querySelector("#prompt-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
     const input = document.querySelector<HTMLInputElement>("#prompt-input");
@@ -826,6 +855,27 @@ function wireEvents(): void {
       syncStatus = `Pulled ${remote.length} memories.`;
     });
   });
+
+  document.querySelector("#device-save")?.addEventListener("click", () => {
+    saveDeviceBridgeSettings();
+    deviceBridgeStatus = "device bridge saved";
+    render();
+  });
+
+  document.querySelector("#device-check")?.addEventListener("click", () => {
+    void deviceAction(async () => {
+      saveDeviceBridgeSettings();
+      const payload = await deviceFetch("/capabilities");
+      const enabled = Boolean(payload.capabilities?.deviceControl?.enabled);
+      const click = Boolean(payload.capabilities?.deviceControl?.pointerClick);
+      const type = Boolean(payload.capabilities?.deviceControl?.typeText);
+      deviceBridgeStatus = `bridge online · control ${enabled ? "on" : "off"} · click ${click ? "yes" : "no"} · type ${type ? "yes" : "no"}`;
+    });
+  });
+
+  document.querySelector("#device-observe")?.addEventListener("click", () => {
+    void observeDeviceFromPrompt();
+  });
 }
 
 async function syncAction(run: () => Promise<void>): Promise<void> {
@@ -835,6 +885,55 @@ async function syncAction(run: () => Promise<void>): Promise<void> {
     syncStatus = error instanceof Error ? error.message : String(error);
   }
   render();
+}
+
+async function observeDeviceFromPrompt(): Promise<void> {
+  await deviceAction(async () => {
+    saveDeviceBridgeSettings();
+    const payload = await deviceFetch("/actions", {
+      method: "POST",
+      body: JSON.stringify({ type: "observe_screen" })
+    });
+    const frontmost = payload.result?.frontmostApp?.app ? ` · ${payload.result.frontmostApp.app}` : "";
+    const screenshot = payload.result?.screenshot?.path ? ` · ${payload.result.screenshot.path}` : "";
+    deviceBridgeObservation = `observed${frontmost}${screenshot}`;
+    deviceBridgeStatus = "device observed";
+  });
+}
+
+async function deviceAction(run: () => Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    deviceBridgeStatus = error instanceof Error ? error.message : String(error);
+  }
+  render();
+}
+
+async function deviceFetch(path: string, init: RequestInit = {}): Promise<Record<string, any>> {
+  if (!deviceBridgeUrl || !deviceBridgeToken) throw new Error("device bridge URL or token missing");
+  const response = await fetch(`${deviceBridgeUrl.replace(/\/$/, "")}${path}`, {
+    ...init,
+    headers: {
+      authorization: `Bearer ${deviceBridgeToken}`,
+      "content-type": "application/json",
+      ...(init.headers ?? {})
+    }
+  });
+  const payload = (await response.json()) as Record<string, any>;
+  if (!response.ok || payload.ok === false) {
+    throw new Error(String(payload.error ?? `device bridge failed: ${response.status}`));
+  }
+  return payload;
+}
+
+function saveDeviceBridgeSettings(): void {
+  deviceBridgeUrl =
+    document.querySelector<HTMLInputElement>("#device-bridge-url")?.value.trim() || deviceBridgeUrl;
+  deviceBridgeToken =
+    document.querySelector<HTMLInputElement>("#device-bridge-token")?.value.trim() || deviceBridgeToken;
+  window.localStorage.setItem("slyos:deviceBridgeUrl", deviceBridgeUrl);
+  window.localStorage.setItem("slyos:deviceBridgeToken", deviceBridgeToken);
 }
 
 function escapeHtml(value: string): string {
