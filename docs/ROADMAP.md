@@ -8,7 +8,7 @@
 - Create per-platform capability maps.
 - Add smoke/parity test descriptions before implementation.
 
-Status: started. The shared TypeScript core, SlyOS-matched desktop shell, Supabase schema, direct screen QA routes, responsive web shell, and iOS source scaffold now exist.
+Status: started. The shared TypeScript core, SlyOS-matched desktop shell, installable PWA metadata, release artifact builder, Supabase schema/migration/config, direct screen QA routes, responsive web shell, and iOS source scaffold now exist.
 
 ## Phase 1: Shared core contracts
 
@@ -35,6 +35,8 @@ Target macOS, Linux, and Windows together.
 
 Current implementation: Vite/TypeScript shell that mirrors the main Android SlyOS surfaces: Boot, Lock, Home, Now, Sent for you, Reconnect, Memory, Memory settings, Mission, My network, Research, Cowork, Voice/listening, Apps, Setup, Look, Expenses, and Manual Mode. Native packaging and OS adapters are next.
 
+Current release path: `npm run release:web` builds a downloadable PWA ZIP. This is installable through Safari/Chrome/Edge today. Native desktop installers require Rust/Tauri or another native wrapper.
+
 ## Phase 3: iOS companion
 
 - SwiftUI app
@@ -57,7 +59,13 @@ Current implementation: SwiftUI/App Intents source scaffold. Xcode project wirin
 - website download pages
 - platform-specific install instructions
 
-Current implementation: Supabase schema and browser sync adapter exist. Each user still needs to create their own Supabase project, run `supabase/schema.sql`, enable magic-link auth, and configure a publishable client key.
+Current implementation: Supabase schema, migration, config, browser sync adapter, readiness checker, and DB apply script exist. Each user still needs to create their own Supabase project, run `supabase/schema.sql` or `npm run db:apply` with `SUPABASE_DB_URL`, enable magic-link auth, and configure a publishable client key.
+
+## Current native blockers
+
+- Full Xcode is not selected on this Mac, so `.ipa`/TestFlight archives cannot be built here yet.
+- Rust/Tauri are not installed, so native macOS/Linux/Windows installers cannot be built here yet.
+- Supabase credentials are not present, so a live hosted DB cannot be provisioned from this checkout yet.
 
 ## Phase 5: Parity hardening
 

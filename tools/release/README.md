@@ -1,14 +1,29 @@
 # Release Tools
 
-Future release scripts belong here.
+Release scripts live here. They produce local artifacts under `release-artifacts/`, which is ignored by git.
 
-Targets:
+## Web/PWA artifact
 
-- macOS app bundle / dmg
-- Linux AppImage, deb, or rpm
-- Windows installer
-- iOS TestFlight/App Store notes
-- website artifact updates
+```bash
+npm run release:web
+```
 
-Do not change the Android release workflow from this repo until a deliberate migration is planned.
+Output:
 
+```text
+release-artifacts/slyos-web-pwa-<version>-<commit>.zip
+release-artifacts/slyos-web-pwa-<version>-<commit>/
+```
+
+This artifact is the current installable cross-device path. It can be hosted anywhere static files are supported, then installed as a PWA on iPhone, macOS, Linux, and Windows.
+
+## Native artifact status
+
+Native release scripts should only be added once the local or CI toolchain can actually produce the artifact:
+
+- iOS: full Xcode app project, Apple signing, archive/export options
+- macOS: Rust/Tauri or native Swift app shell, signing/notarization
+- Linux: Tauri or native package build, AppImage/deb/rpm targets
+- Windows: Tauri or native package build, signer/installer target
+
+Do not publish placeholder native installers.

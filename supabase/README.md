@@ -9,11 +9,15 @@ No live cloud database is bundled with this repo.
 What is already done:
 
 - `schema.sql` defines the tables.
+- `migrations/20260710000000_initial_sync_schema.sql` mirrors the schema for Supabase CLI workflows.
+- `config.toml` defines a local Supabase development stack.
 - RLS is enabled for every user-owned table.
 - Policies restrict each user to their own rows.
 - Explicit grants are included for authenticated Data API access.
 - The TypeScript sync client is implemented in `shared/agent-core/src/supabaseSync.ts`.
 - The desktop shell has runtime fields for Supabase URL, publishable key, magic-link auth, push, and pull.
+- `npm run db:check` verifies local readiness without printing secrets.
+- `npm run db:apply` applies the schema when `SUPABASE_DB_URL` is provided.
 
 What you still need to do:
 
@@ -58,6 +62,44 @@ The client app must use a publishable/anon key only.
 6. Enable email magic links.
 7. Copy the project URL.
 8. Copy the publishable or anon client key.
+9. Copy the Postgres connection string if you want CLI setup from this repo.
+
+## Check local readiness
+
+From the repo root:
+
+```bash
+npm run db:check
+```
+
+This checks:
+
+- schema file
+- migration file
+- Supabase config
+- `psql`
+- optional Supabase CLI
+- optional Docker
+- optional env vars
+- RLS/grants/policy patterns
+
+It redacts secrets and treats missing live credentials as a warning, not a repo failure.
+
+## Apply schema with a database URL
+
+If you have a Supabase Postgres connection string:
+
+```bash
+SUPABASE_DB_URL='postgresql://postgres...sslmode=require' npm run db:apply
+```
+
+The script runs:
+
+```bash
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/schema.sql
+```
+
+It will not guess credentials and will not print your DB URL.
 
 ## Configure the local app
 

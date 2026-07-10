@@ -29,6 +29,7 @@ private-data/*
 node_modules/
 dist/
 build/
+release-artifacts/
 .next/
 .vite/
 coverage/
@@ -52,4 +53,3 @@ DerivedData/
 
 # Logs
 *.log
-

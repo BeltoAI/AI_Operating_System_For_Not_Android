@@ -1,0 +1,45 @@
+{
+  "name": "SlyOS BADSCIENTIST",
+  "short_name": "SlyOS",
+  "description": "A portable SlyOS agent shell with brain, memory, research, and action surfaces.",
+  "id": "/?app=slyos",
+  "start_url": "/?screen=home",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "portrait",
+  "background_color": "#f4efe6",
+  "theme_color": "#f4efe6",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/slyos-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ask SlyOS",
+      "short_name": "Ask",
+      "description": "Open the SlyOS command surface.",
+      "url": "/?screen=home",
+      "icons": [{ "src": "/icons/slyos-icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Open Brain",
+      "short_name": "Brain",
+      "description": "Open SlyOS memory.",
+      "url": "/?screen=memory",
+      "icons": [{ "src": "/icons/slyos-icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Start Voice",
+      "short_name": "Voice",
+      "description": "Open the SlyOS listening surface.",
+      "url": "/?screen=voice",
+      "icons": [{ "src": "/icons/slyos-icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    }
+  ]
+}

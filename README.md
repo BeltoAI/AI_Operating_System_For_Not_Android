@@ -19,8 +19,9 @@ This repo is useful today, but it is not a finished App Store / desktop installe
 What works today:
 
 - A runnable SlyOS-style web shell for local development.
+- Installable PWA metadata, offline shell caching, and a web release artifact builder.
 - Shared TypeScript agent contracts for memory, planning, actions, and sync.
-- A Supabase schema for optional cross-device memory and settings sync.
+- A Supabase schema, migration, local config, readiness check, and DB apply script for optional cross-device memory and settings sync.
 - iOS SwiftUI/App Intents source scaffolding.
 - Platform folders for macOS, Linux, Windows, iOS, and Android reference notes.
 - Documentation for parity, roadmap, setup, and Android baseline limits.
@@ -65,6 +66,20 @@ Run checks:
 npm run typecheck
 npm run build
 ```
+
+Build a downloadable PWA artifact:
+
+```bash
+npm run release:web
+```
+
+Output:
+
+```text
+release-artifacts/slyos-web-pwa-<version>-<commit>.zip
+```
+
+That ZIP is the current cross-device install path. Host the `app/` folder inside it, then install it as a PWA from Safari on iPhone/iPad or Chrome/Edge on desktop.
 
 ## Open specific screens
 
@@ -150,11 +165,15 @@ The database is prepared in code, not already provisioned in the cloud.
 Already in this repo:
 
 - `supabase/schema.sql` creates the sync tables.
+- `supabase/migrations/20260710000000_initial_sync_schema.sql` is ready for Supabase CLI migration workflows.
+- `supabase/config.toml` supports a local Supabase stack.
 - Row Level Security is enabled on all user data tables.
 - Policies restrict rows by `auth.uid() = user_id`.
 - Explicit `grant` statements expose the intended tables to authenticated users.
 - `shared/agent-core/src/supabaseSync.ts` contains the browser client sync adapter.
 - The desktop shell has a setup UI for URL, publishable key, magic-link auth, push brain, and pull brain.
+- `npm run db:check` checks local DB readiness without printing secrets.
+- `npm run db:apply` applies the schema when `SUPABASE_DB_URL` is set.
 
 Still required for every real deployment:
 
@@ -166,6 +185,12 @@ Still required for every real deployment:
 6. Sign in before pushing or pulling memory.
 
 Never put a Supabase service-role key in this repo or in browser/mobile clients.
+
+Apply the schema from the terminal when you have a DB URL:
+
+```bash
+SUPABASE_DB_URL='postgresql://...' npm run db:apply
+```
 
 ## Supabase local config
 
@@ -209,6 +234,13 @@ The shell is intentionally responsive:
 - Phone/tablet: full-screen OS-style app
 - Short screens: compressed card spacing and graph height
 - Narrow screens: wrapped memory search and smaller text controls
+
+The shell is also PWA-installable:
+
+- `manifest.webmanifest` exposes install metadata and shortcuts.
+- `sw.js` caches the app shell.
+- `offline.html` gives a controlled offline state.
+- `npm run release:web` builds a ZIP with `INSTALL.md` and `RELEASE.json`.
 
 ## Platform plan
 

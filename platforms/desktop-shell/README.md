@@ -33,6 +33,22 @@ npm run typecheck
 npm run build
 ```
 
+## Build downloadable PWA
+
+From the repo root:
+
+```bash
+npm run release:web
+```
+
+This creates:
+
+```text
+release-artifacts/slyos-web-pwa-<version>-<commit>.zip
+```
+
+The ZIP includes the static app, install instructions, and release metadata.
+
 ## Direct screen routes
 
 Use these for quick QA and screenshots:
@@ -91,6 +107,17 @@ The CSS also compresses graph height, card spacing, and large labels on short or
 1024 x 768
 1440 x 900
 ```
+
+## PWA behavior
+
+The shell includes:
+
+- `public/manifest.webmanifest`
+- `public/sw.js`
+- `public/offline.html`
+- `public/icons/slyos-icon.svg`
+
+It can be installed from Safari on iPhone/iPad using Add to Home Screen, and from Chrome/Edge on desktop using Install App.
 
 ## Native desktop path
 

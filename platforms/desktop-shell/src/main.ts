@@ -179,6 +179,7 @@ setTimeout(() => {
 }, 1600);
 
 render();
+registerServiceWorker();
 
 function render(): void {
   appRoot.innerHTML = `
@@ -851,4 +852,18 @@ function escapeHtml(value: string): string {
 
 function escapeAttr(value: string): string {
   return escapeHtml(value).replace(/`/g, "&#96;");
+}
+
+function registerServiceWorker(): void {
+  if (!("serviceWorker" in navigator)) return;
+
+  const isLocalhost = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
+  const isSecure = window.location.protocol === "https:";
+  if (!isLocalhost && !isSecure) return;
+
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((error: unknown) => {
+      console.warn("SlyOS service worker registration failed", error);
+    });
+  });
 }
