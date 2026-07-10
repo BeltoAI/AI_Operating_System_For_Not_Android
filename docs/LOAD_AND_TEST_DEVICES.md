@@ -48,11 +48,17 @@ Localhost from your Mac can preview the iPhone UI, but a real iPhone PWA install
 
 For cabled iPhone testing on a Mac:
 
+1. Connect the iPhone 15 Pro Max and trust the Mac on the phone.
+2. Enable Web Inspector on the iPhone.
+3. Enable Safari's Develop menu on the Mac.
+4. Open the PWA in Safari on the iPhone.
+5. Inspect it from Safari on the Mac.
+
+For native cabled install/debug:
+
 1. Install full Xcode from the App Store.
 2. Run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
-3. Connect the iPhone 15 Pro Max and trust the Mac on the phone.
-4. Enable Safari's Develop menu on the Mac and Web Inspector on the iPhone.
-5. Open the PWA in Safari on the iPhone and inspect it from Safari on the Mac.
+3. Create/sign the Xcode project and run it on the trusted iPhone.
 
 This repo has a SwiftUI source scaffold under `platforms/ios`, but it does not yet include a generated Xcode project or signed `.ipa`.
 
