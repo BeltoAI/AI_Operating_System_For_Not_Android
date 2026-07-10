@@ -20,7 +20,10 @@ rmSync(archivePath, { force: true });
 mkdirSync(stagingDir, { recursive: true });
 
 run("npm", ["run", "typecheck"], repoRoot);
-run("npm", ["run", "build", "-w", "@badscientist/desktop-shell"], repoRoot);
+run("npm", ["run", "build", "-w", "@badscientist/desktop-shell"], repoRoot, {
+  VITE_SUPABASE_URL: "",
+  VITE_SUPABASE_PUBLISHABLE_KEY: ""
+});
 
 const distDir = join(repoRoot, "platforms/desktop-shell/dist");
 if (!existsSync(join(distDir, "index.html"))) {
@@ -39,8 +42,12 @@ if (commandExists("zip")) {
 
 console.log(`Built ${archivePath}`);
 
-function run(command, args, cwd) {
-  execFileSync(command, args, { cwd, stdio: "inherit" });
+function run(command, args, cwd, envOverrides = {}) {
+  execFileSync(command, args, {
+    cwd,
+    env: { ...process.env, ...envOverrides },
+    stdio: "inherit"
+  });
 }
 
 function git(args) {
@@ -67,6 +74,7 @@ function releaseMeta({ version, commit }) {
     commit,
     builtAt: new Date().toISOString(),
     artifactType: "web-pwa",
+    containsProjectDefaults: false,
     routes: [
       "/?screen=home",
       "/?screen=now",
@@ -153,6 +161,6 @@ iOS does not allow this PWA to replace the launcher, read all notifications, or 
 
 ## Database
 
-Supabase is optional. To sync memory/settings across devices, create a Supabase project, run \`supabase/schema.sql\`, enable email/password auth, and paste the publishable key in Setup.
+Supabase is optional. Public release artifacts intentionally ship without project-specific Supabase defaults. To sync memory/settings across devices, create a Supabase project, run \`supabase/schema.sql\`, enable email/password auth, and paste the publishable key in Setup.
 `;
 }
