@@ -1,46 +1,107 @@
 # Desktop Shell
 
-First runnable cross-platform BADSCIENTIST surface for macOS, Linux, and Windows.
+Runnable SlyOS-style shell for macOS, Linux, and Windows development.
 
-This shell is meant to feel like the Android SlyOS launcher, not like a dashboard.
+This is a browser shell today. It is designed to match the Android SlyOS feeling closely while the native desktop adapters are built around it.
 
 ## Run
 
+From the repo root:
+
 ```bash
-cd /Users/emilshirokikh/Downloads/BADSCIENTIST
 npm install
 npm run dev
 ```
 
-## Build
+Open the Vite URL, usually:
+
+```text
+http://localhost:5173
+```
+
+## Build and check
 
 ```bash
+npm run typecheck -w @badscientist/desktop-shell
 npm run build -w @badscientist/desktop-shell
 ```
 
-## Current features
+Or from the root:
 
-- Boot → Lock → Home flow
-- exact SlyOS token palette
-- Caveat SlyOS wordmark
-- Android-like Home prompt and shortcuts
-- bottom nav with Brain centered
-- Now feed with catch-up/drafts/proposals
-- People-style reply cards
-- Memory ask/search and graph-like map
-- Manual Mode pause/resume
-- prompt-to-action planning through the shared brain contract
-- confirmation-gated action display
-- local browser memory store
-- Supabase magic-link sync UI in Setup
-- memory/settings push-pull hooks
+```bash
+npm run typecheck
+npm run build
+```
 
-## Next native step
+## Direct screen routes
 
-Install Rust, then wrap this Vite app with Tauri and add platform adapters:
+Use these for quick QA and screenshots:
 
-- macOS: menu bar, Accessibility API, screen capture, global shortcut
-- Linux: tray, screenshot, terminal, browser, local models
-- Windows: system tray, UI Automation, screen capture, Office/browser workflows
+```text
+/?screen=home
+/?screen=now
+/?screen=outbox
+/?screen=reconnect
+/?screen=memory
+/?screen=memory-settings
+/?screen=mission
+/?screen=network
+/?screen=research
+/?screen=cowork
+/?screen=voice
+/?screen=apps
+/?screen=setup
+/?screen=look
+/?screen=expenses
+```
 
-Keep the shared action schema as the boundary between the agent and OS-specific code.
+## Current screens
+
+- Boot and Lock
+- Home prompt: "what should happen?"
+- Now digest
+- Sent for you
+- Reconnect
+- Brain memory graph
+- Memory settings
+- Mission
+- My network
+- Research
+- Cowork
+- Voice/listening
+- Apps
+- Manual mode
+- Setup and Supabase sync
+- Look
+- Expenses
+
+## Responsive behavior
+
+The shell has two modes:
+
+- Desktop: centered phone preview with a fixed SlyOS-like device frame.
+- Mobile/tablet: full-screen shell below 760px viewport width.
+
+The CSS also compresses graph height, card spacing, and large labels on short or narrow screens. When changing UI, test at minimum:
+
+```text
+390 x 844
+375 x 667
+430 x 932
+1024 x 768
+1440 x 900
+```
+
+## Native desktop path
+
+The planned native wrapper is Tauri. The shared action schema remains the boundary between the agent brain and OS-specific power.
+
+Adapter targets:
+
+- macOS: menu bar, global shortcut, Accessibility API, screen capture, files, terminal, browser
+- Linux: tray/command palette, screenshot, terminal, browser, local models
+- Windows: tray, UI Automation, screen capture, browser, Office and file workflows
+
+## Development rule
+
+Keep this shell OS-like. Avoid dashboard layouts, marketing pages, oversized hero sections, or generic SaaS card walls. The first screen should feel like an operating surface, not a website.

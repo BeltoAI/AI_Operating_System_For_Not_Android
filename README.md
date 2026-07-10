@@ -1,243 +1,276 @@
 # BADSCIENTIST
 
-Cross-platform rebuild workspace for SlyOS / AgentOS on iOS, macOS, Linux, and Windows.
+Cross-platform SlyOS / AgentOS rebuild for iOS, macOS, Linux, and Windows.
 
-This repo is intentionally separate from the existing Android production tree at:
+BADSCIENTIST is the non-Android workspace for the SlyOS idea: a phone or desktop surface where every request flows through a personal agent brain, memory, settings, and confirmation-gated actions.
+
+The Android app remains the richest reference implementation. This repo rebuilds the closest possible equivalents for other operating systems without moving or breaking the existing Android production path.
+
+Repository:
+
+```text
+https://github.com/BeltoAI/AI_Operating_System_For_Not_Android
+```
+
+## Read this first
+
+This repo is useful today, but it is not a finished App Store / desktop installer product yet.
+
+What works today:
+
+- A runnable SlyOS-style web shell for local development.
+- Shared TypeScript agent contracts for memory, planning, actions, and sync.
+- A Supabase schema for optional cross-device memory and settings sync.
+- iOS SwiftUI/App Intents source scaffolding.
+- Platform folders for macOS, Linux, Windows, iOS, and Android reference notes.
+- Documentation for parity, roadmap, setup, and Android baseline limits.
+
+What does not exist yet:
+
+- Finished native iOS app project ready for TestFlight.
+- Finished macOS, Linux, or Windows installers.
+- Full Android-level notification listener, launcher, overlay, or accessibility behavior on other OSes.
+- A pre-provisioned cloud database for every clone of this repo.
+
+Important: `localhost` shows a browser-based iPhone-shaped preview. It is not the native iPhone app. The native iOS work lives under `platforms/ios`.
+
+## Quick start
+
+Requirements:
+
+- Node.js 22 or newer
+- npm
+- Git
+- Optional: a Supabase account if you want cross-device sync
+- Optional later: Xcode for iOS, Rust/Tauri for native desktop packaging
+
+Clone and run:
+
+```bash
+git clone https://github.com/BeltoAI/AI_Operating_System_For_Not_Android.git
+cd AI_Operating_System_For_Not_Android
+npm install
+npm run dev
+```
+
+Open the Vite URL from the terminal, usually:
+
+```text
+http://localhost:5173
+```
+
+Run checks:
+
+```bash
+npm run typecheck
+npm run build
+```
+
+## Open specific screens
+
+The desktop shell supports direct screen routes so contributors can test the UI without clicking through every flow:
+
+```text
+http://localhost:5173/?screen=home
+http://localhost:5173/?screen=now
+http://localhost:5173/?screen=outbox
+http://localhost:5173/?screen=reconnect
+http://localhost:5173/?screen=memory
+http://localhost:5173/?screen=memory-settings
+http://localhost:5173/?screen=mission
+http://localhost:5173/?screen=network
+http://localhost:5173/?screen=research
+http://localhost:5173/?screen=cowork
+http://localhost:5173/?screen=voice
+http://localhost:5173/?screen=apps
+http://localhost:5173/?screen=setup
+```
+
+Use browser device emulation or resize the window to test phone, tablet, and desktop behavior. On narrow screens the shell becomes full-screen. On desktop it stays inside a centered device preview.
+
+## Project structure
+
+```text
+BADSCIENTIST/
+  docs/
+    ANDROID_BASELINE.md       Android reference and why it stays separate
+    PARITY_MATRIX.md          What each OS can and cannot match
+    ROADMAP.md                Build phases
+    REPO_SETUP.md             Repo setup notes
+  supabase/
+    README.md                 Database setup guide
+    schema.sql                Tables, grants, indexes, and RLS policies
+  shared/
+    agent-core/               Shared memory, action, planning, sync code
+    design-tokens/            Shared visual tokens
+    importers/                Future chat/document importers
+    memory-schema/            Brain schema notes
+    model-router/             Model routing notes
+    parity-tests/             Cross-platform parity test plan
+    tool-contracts/           Action schema and confirmation policy
+  platforms/
+    android-reference/        Notes only. Production Android is elsewhere.
+    desktop-shell/            Runnable Vite/TypeScript shell
+    ios/                      SwiftUI/App Intents source scaffold
+    linux/                    Linux adapter notes
+    macos/                    macOS adapter notes
+    windows/                  Windows adapter notes
+  tools/
+    data-migration/
+    device/
+    release/
+  website/
+  private-data/               Local ignored data only
+```
+
+## Android reference
+
+The production Android tree is intentionally not moved into this repo:
 
 ```text
 /Users/emilshirokikh/Downloads/MADSCIENTIST/agentos
 ```
 
-The Android app remains the reference implementation. BADSCIENTIST is where we map, rebuild, and test the closest possible equivalents for iOS, macOS, Linux, and Windows without breaking the Android deployment path.
+Android is the reference because it can expose platform hooks other OSes cannot fully match:
 
-GitHub target:
+- Home launcher replacement
+- NotificationListenerService
+- RemoteInput replies
+- AccessibilityService screen reading and gestures
+- Overlay service
+- SMS, calendar, camera, contacts, files, package queries
+- ADB and Gradle install flows
 
-```text
-https://github.com/BeltoAI/AI_Operating_System_For_Not_Android.git
-```
+Moving Android right now would risk breaking Gradle paths, release scripts, website links, and ADB install commands. BADSCIENTIST mirrors behavior first; repo restructuring can come later once parity is proven.
 
-## Current status
+## Database status
 
-This repo now contains:
+The database is prepared in code, not already provisioned in the cloud.
 
-- shared TypeScript agent core
-- shared action risk/confirmation contract
-- local browser memory store
-- optional Supabase memory/settings sync client
-- runnable SlyOS-matched desktop web shell for macOS/Linux/Windows development
-- iOS SwiftUI/App Intents source scaffold
-- Supabase setup SQL with RLS
-- OS parity matrix and platform notes
+Already in this repo:
 
-It does not yet contain finished native app bundles/installers. The desktop shell is intentionally the first runnable surface; native wrappers come next.
+- `supabase/schema.sql` creates the sync tables.
+- Row Level Security is enabled on all user data tables.
+- Policies restrict rows by `auth.uid() = user_id`.
+- Explicit `grant` statements expose the intended tables to authenticated users.
+- `shared/agent-core/src/supabaseSync.ts` contains the browser client sync adapter.
+- The desktop shell has a setup UI for URL, publishable key, magic-link auth, push brain, and pull brain.
 
-## Why this exists
+Still required for every real deployment:
 
-The current Android build depends on Android-specific capabilities:
+1. Create a Supabase project.
+2. Run `supabase/schema.sql` in the Supabase SQL editor.
+3. Enable email magic links.
+4. Copy the project URL and publishable/anon key.
+5. Use those values in the desktop shell Setup screen or local `.env`.
+6. Sign in before pushing or pulling memory.
 
-- HOME launcher replacement
-- NotificationListener reply actions
-- AccessibilityService screen reading and gesture execution
-- overlay service
-- SMS, calendar, camera, contacts, and app-intent style Android APIs
-- ADB install and Gradle release flow
+Never put a Supabase service-role key in this repo or in browser/mobile clients.
 
-Those capabilities do not map 1:1 to every OS. The goal here is therefore:
+## Supabase local config
 
-1. Preserve Android as the canonical behavior reference.
-2. Define shared agent contracts once.
-3. Build each OS with native capabilities where possible.
-4. Mark every feature as same, equivalent, limited, or impossible per platform.
-
-## Structure
-
-```text
-BADSCIENTIST/
-  docs/                         product baseline, roadmap, parity matrix
-  supabase/                     optional cross-device sync schema
-  shared/                       cross-platform schemas and contracts
-    agent-core/
-    design-tokens/
-    importers/
-    memory-schema/
-    model-router/
-    parity-tests/
-    tool-contracts/
-  platforms/
-    android-reference/          notes only; production Android stays in MADSCIENTIST/agentos
-    ios/
-    linux/
-    macos/
-    windows/
-  tools/
-    data-migration/
-    device/
-    release/
-  website/                      future cross-platform site/docs
-  private-data/                 ignored local data only
-```
-
-## Quick start
-
-Install dependencies:
+Copy the example file:
 
 ```bash
-cd /Users/emilshirokikh/Downloads/BADSCIENTIST
-npm install
+cp .env.example .env
 ```
 
-Run typechecks:
+Fill it with your project values:
 
 ```bash
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_PUBLISHABLE_KEY=your-publishable-or-anon-key
+```
+
+The current browser shell also accepts those values at runtime from `Setup`.
+
+## What the shell currently mirrors
+
+The web shell is meant to feel like SlyOS, not like a SaaS dashboard. Current main surfaces include:
+
+- Home prompt: "what should happen?"
+- Bottom nav: Home, Now, Brain, Research, Apps
+- Now catch-up digest and waiting notification
+- Sent for you outbound log
+- Reconnect quiet contacts flow
+- Brain memory graph
+- Memory settings cards
+- Mission picker
+- My network search
+- Research workspace
+- Cowork local-agent workspace
+- Dark listening/voice graph
+- Setup and Supabase sync controls
+- Apps/manual fallback surfaces
+
+The shell is intentionally responsive:
+
+- Desktop: centered phone preview
+- Phone/tablet: full-screen OS-style app
+- Short screens: compressed card spacing and graph height
+- Narrow screens: wrapped memory search and smaller text controls
+
+## Platform plan
+
+| Platform | Target shape | Hard limits |
+| --- | --- | --- |
+| Android | Existing production launcher app | Stays in `MADSCIENTIST/agentos` for now |
+| iOS | Native SwiftUI companion with App Intents, Shortcuts, widgets, Share Extension, files, camera, memory | No launcher replacement, broad notification listener, or arbitrary app control |
+| macOS | Native shell around shared agent with menu bar, global shortcut, Accessibility API, screen capture, files, browser, terminal | Requires user-granted permissions |
+| Linux | Desktop shell with tray/command palette, screenshot, terminal, browser, local models | Wayland/X11 and desktop environment differences |
+| Windows | Desktop shell with tray, UI Automation, screen capture, browser, Office/file workflows | Permission and app automation differences |
+
+## Contributor workflow
+
+Before changing code:
+
+```bash
+git status --short --branch
 npm run typecheck
 ```
 
-Build everything:
+After changing code:
 
 ```bash
+npm run typecheck
 npm run build
 ```
 
-Run the desktop shell:
+For UI work, verify at minimum:
 
-```bash
-npm run dev
-```
+- `?screen=home`
+- `?screen=now`
+- `?screen=memory`
+- `?screen=memory-settings`
+- `?screen=research`
+- `?screen=voice`
 
-Then open the Vite URL shown in the terminal.
+Check both:
 
-## What runs today
+- Desktop preview width
+- Mobile width below 760px
 
-### Shared core
-
-Location:
-
-```text
-shared/agent-core
-```
-
-The shared core owns:
-
-- `planPrompt`: prompt-to-action-plan skeleton
-- `AgentAction`: portable action envelope
-- confirmation gates for external sends, destructive actions, financial actions, and security-sensitive actions
-- `MemoryStore`: local memory/settings contract
-- `createBrainSyncClient`: Supabase sync client
-- platform capability data
-
-### Desktop shell
-
-Location:
-
-```text
-platforms/desktop-shell
-```
-
-This is the first shared macOS/Linux/Windows surface. It currently provides:
-
-- SlyOS Boot → Lock → Home flow
-- exact warm ivory/orange/ink design-token palette from the Android preview
-- Caveat wordmark and Inter/SF-style UI font stack
-- Android-style Home prompt: "what should happen?"
-- Look, Docs, Expenses, and Setup launcher shortcuts
-- bottom SlyOS nav with Brain centered and emphasized
-- Now feed with suggested action, catch-up brief, waiting threads, and reply drafts
-- Memory screen with ask/search, graph-like memory map, and remember flow
-- Manual Mode fallback with agent pause/resume
-- visible confirmation-gated Brain action queue
-- optional Supabase magic-link sync UI in Setup
-
-The native desktop plan is to wrap this shell with Tauri once Rust is installed, then add per-OS adapters for screen capture, accessibility, shortcuts, tray/menu, filesystem, terminal, browser, and local model integrations.
-
-Visual source of truth:
-
-```text
-/Users/emilshirokikh/Downloads/MADSCIENTIST/agentos/ui/tokens.json
-/Users/emilshirokikh/Downloads/MADSCIENTIST/agentos/ui/screens/preview.html
-/Users/emilshirokikh/Downloads/MADSCIENTIST/agentos/android/AgentShell/src/main/java/com/agentos/shell/screens
-```
-
-The shell is now intentionally phone/OS-like, not dashboard-like.
-
-### iOS companion
-
-Location:
-
-```text
-platforms/ios/SlyOSCompanion/Sources/SlyOSCompanion
-```
-
-The iOS source scaffold includes:
-
-- SwiftUI tab shell
-- command center
-- local memory view
-- action queue
-- settings view
-- App Intents for Ask SlyOS, Remember, and Memory
-
-This still needs to be placed into an Xcode iOS app project before it can run on the iPhone.
-
-## Supabase sync
-
-Supabase is optional. It is meant for free-start cross-device memory/settings sync, not for raw secrets.
-
-Setup:
-
-1. Create a Supabase project.
-2. Open the SQL editor.
-3. Run `supabase/schema.sql`.
-4. Enable email magic-link auth.
-5. Use your project URL and publishable/anon client key in the desktop shell.
-
-Security rules built into the schema:
-
-- RLS enabled on all user tables.
-- Authenticated users can only access rows where `auth.uid() = user_id`.
-- No anon table access is granted.
-- No service-role key is needed or allowed in clients.
-- Tables have explicit grants for authenticated Data API access.
-
-Synced tables:
-
-- `devices`
-- `settings`
-- `memory_items`
-- `action_log`
-- `expenses`
-- `file_metadata`
-
-## One-shot reality check
-
-A perfect Android clone on iOS, macOS, Linux, and Windows is not technically honest. Android exposes launcher, notification, accessibility, overlay, and SMS hooks that iOS does not expose, and desktop OSes expose different automation primitives.
-
-The scalable plan is:
-
-- Android: keep Kotlin/Compose production app as the behavioral reference.
-- macOS/Linux/Windows: build one shared desktop agent shell with native OS adapters.
-- iOS: build a native SwiftUI companion with App Intents, Shortcuts, Share Extension, widgets, camera, files, memory, and explicit user-confirmed actions.
-- Shared: centralize schemas, prompts, action contracts, memory models, importers, and parity tests.
-
-## Device access strategy
-
-| Platform | Best access path | Hard limit |
-| --- | --- | --- |
-| Android | existing launcher, notifications, accessibility, overlay, SMS/calendar APIs | production stays in `MADSCIENTIST/agentos` for now |
-| macOS | menu bar/tray, global shortcut, Accessibility API, screen capture, files, terminal, browser | permissions are user-granted and per-device |
-| Linux | tray/command palette, screenshot, terminal, browser, local models | Wayland/X11 and desktop environment differences |
-| Windows | system tray, UI Automation, screen capture, filesystem, browser, Office workflows | permissions and app-specific automation vary |
-| iOS | SwiftUI app, App Intents, Shortcuts, Share Extension, widgets, camera, files | no launcher replacement, broad notification listener, or arbitrary app control |
-
-## Repo hygiene
+## Security and privacy rules
 
 Do not commit:
 
 - API keys
-- local exports
-- device backups
-- app databases
-- LinkedIn/Instagram/Telegram/WhatsApp data
 - Supabase service-role keys
-- APKs or installers unless release policy says so
+- Device backups
+- Raw chat exports
+- App databases
+- Private screenshots
+- LinkedIn, Instagram, Telegram, WhatsApp exports
+- APKs or installers unless a release policy explicitly allows them
 
-Private local data belongs in `private-data/`, which is ignored except for `.gitkeep`.
+Use `private-data/` for local-only files. It is ignored except for `.gitkeep`.
+
+## Current north star
+
+The goal is not to fake Android on every OS. The goal is to preserve the SlyOS experience:
+
+1. Every request flows through the brain.
+2. Memory and settings are portable.
+3. Consequential actions are explicit and confirmation-gated.
+4. Each OS uses the deepest native access it safely exposes.
+5. Unsupported Android-only powers are documented honestly, not hidden.
