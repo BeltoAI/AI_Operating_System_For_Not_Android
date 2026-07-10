@@ -86,8 +86,8 @@ function releaseMeta({ version, commit }) {
       "/?screen=setup"
     ],
     nativeStatus: {
-      ios: "SwiftUI source scaffold exists; full Xcode app/signing still required for IPA/TestFlight.",
-      macos: "PWA artifact works today; native Tauri shell requires Rust/Tauri and full native adapter work.",
+      ios: "Editable Xcode project exists under platforms/apple/SlyOSNative; full Xcode and signing are required for cabled iPhone install.",
+      macos: "Native WebKit .app exists and is packaged by npm run release:macos-app; notarized installer still future work.",
       linux: "PWA artifact works today; native package requires Tauri/Linux adapter work.",
       windows: "PWA artifact works today; native package requires Tauri/Windows adapter work."
     }

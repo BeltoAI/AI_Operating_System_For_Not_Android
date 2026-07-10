@@ -9,6 +9,12 @@ import {
 } from "@badscientist/agent-core";
 import "./styles.css";
 
+const nativePlatform = new URLSearchParams(window.location.search).get("native");
+if (nativePlatform) {
+  document.documentElement.dataset.nativePlatform = nativePlatform;
+  document.body.classList.add(`native-${nativePlatform}`);
+}
+
 type ShellScreen =
   | "boot"
   | "lock"

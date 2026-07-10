@@ -19,6 +19,9 @@ This repo is useful today, but it is not a finished App Store / desktop installe
 What works today:
 
 - A runnable SlyOS-style web shell for local development.
+- A native macOS `SlyOS.app` wrapper that fills the Mac frame and overlays the Dock area with the SlyOS bottom nav.
+- An editable generated Apple Xcode project with iOS and macOS targets.
+- Generated SlyOS app icons for iPhone, iPad, macOS, and the PWA manifest.
 - Installable PWA metadata, offline shell caching, and a web release artifact builder.
 - A localhost desktop device-agent bridge for macOS, Linux, and Windows actions.
 - Prompt-to-device control primitives: observe screen, front app, clipboard, click, type, hotkey, scroll, and wait.
@@ -30,8 +33,9 @@ What works today:
 
 What does not exist yet:
 
-- Finished native iOS app project ready for TestFlight.
-- Finished macOS, Linux, or Windows installers.
+- TestFlight/App Store iOS distribution.
+- Notarized macOS DMG/PKG installer.
+- Finished Linux or Windows native installers.
 - Full Android-level notification listener, launcher, overlay, or accessibility behavior on other OSes.
 - A pre-provisioned cloud database for every clone of this repo.
 
@@ -73,6 +77,7 @@ Build downloadable release artifacts:
 
 ```bash
 npm run release:all
+npm run release:macos-app
 ```
 
 Outputs:
@@ -80,11 +85,60 @@ Outputs:
 ```text
 release-artifacts/slyos-web-pwa-<version>-<commit>.zip
 release-artifacts/slyos-desktop-agent-<version>-<commit>.zip
+release-artifacts/slyos-macos-app-<version>-<commit>.zip
 ```
 
-The PWA ZIP is the current cross-device app install path. Host the `app/` folder inside it, then install it as a PWA from Safari on iPhone/iPad or Chrome/Edge on desktop.
+The macOS app ZIP contains a signed local `SlyOS.app`. It is ad-hoc signed for local testing, not notarized for public Gatekeeper distribution.
+
+The PWA ZIP remains the current browser/PWA install path. Host the `app/` folder inside it, then install it as a PWA from Safari on iPhone/iPad or Chrome/Edge on desktop.
 
 The desktop-agent ZIP is the native-power bridge for macOS, Linux, and Windows. Download it to the target computer, run it locally, and connect the SlyOS shell to its localhost URL/token when desktop OS actions are needed.
+
+## Native Mac App
+
+Build and open the Mac app:
+
+```bash
+npm run macos:app
+open platforms/macos/build/SlyOS.app
+```
+
+The app:
+
+- opens as a borderless launcher-style SlyOS surface;
+- fills the active Mac display;
+- hides the Dock/menu bar;
+- places the SlyOS bottom nav over the bottom frame;
+- uses the same UI code as `platforms/desktop-shell/src`;
+- includes generated SlyOS icons and a bundled WebKit app shell.
+
+After UI edits, run `npm run macos:app` again.
+
+## Native iPhone App
+
+Generate and open the Apple project:
+
+```bash
+npm run apple:xcode
+open platforms/apple/SlyOSNative/SlyOSNative.xcodeproj
+```
+
+To install on a cabled iPhone:
+
+1. Install full Xcode from Apple.
+2. Open `platforms/apple/SlyOSNative/SlyOSNative.xcodeproj`.
+3. Select the `SlyOS-iOS` scheme.
+4. Set your Apple Developer signing team.
+5. Select your connected iPhone.
+6. Press Run.
+
+Command Line Tools alone can generate and edit this project, but cannot deploy to an iPhone.
+
+Regenerate app icons:
+
+```bash
+npm run apple:icons
+```
 
 Run the local desktop device bridge:
 
@@ -157,6 +211,7 @@ BADSCIENTIST/
     tool-contracts/           Action schema and confirmation policy
   platforms/
     android-reference/        Notes only. Production Android is elsewhere.
+    apple/SlyOSNative/        Shared native Apple WebKit wrapper and Xcode project
     desktop-agent/            Localhost OS action bridge for desktop platforms
     desktop-shell/            Runnable Vite/TypeScript shell
     ios/                      SwiftUI/App Intents source scaffold
@@ -293,8 +348,8 @@ The shell is also PWA-installable:
 | Platform | Target shape | Hard limits |
 | --- | --- | --- |
 | Android | Existing production launcher app | Stays in `MADSCIENTIST/agentos` for now |
-| iOS | Native SwiftUI companion with App Intents, Shortcuts, widgets, Share Extension, files, camera, memory | No launcher replacement, broad notification listener, or arbitrary app control |
-| macOS | Native shell around shared agent with menu bar, global shortcut, Accessibility API, screen capture, files, browser, terminal | Requires user-granted permissions |
+| iOS | Generated native SwiftUI/WebKit project with App Intents path, Shortcuts, files, camera, memory | Needs full Xcode, signing team, and cabled device run; no launcher replacement, broad notification listener, or arbitrary app control |
+| macOS | Runnable native WebKit `SlyOS.app` plus desktop agent bridge for Accessibility API, screen capture, files, browser, terminal | Requires user-granted permissions; current app is ad-hoc signed, not notarized |
 | Linux | Desktop shell with tray/command palette, screenshot, terminal, browser, local models | Wayland/X11 and desktop environment differences |
 | Windows | Desktop shell with tray, UI Automation, screen capture, browser, Office/file workflows | Permission and app automation differences |
 

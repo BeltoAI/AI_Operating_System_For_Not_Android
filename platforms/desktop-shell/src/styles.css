@@ -60,6 +60,14 @@ textarea {
   padding: 28px;
 }
 
+.native-macos .os-stage {
+  min-height: 100vh;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  background: var(--bg);
+}
+
 .device-shell {
   width: min(390px, calc(100vw - 32px));
   height: min(844px, calc(100vh - 32px));
@@ -73,11 +81,27 @@ textarea {
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
 }
 
+.native-macos .device-shell {
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .screen-body {
   flex: 1;
   min-height: 0;
   padding: 30px 26px 18px;
   overflow: auto;
+}
+
+.native-macos .screen-body {
+  padding: max(34px, env(safe-area-inset-top)) max(52px, env(safe-area-inset-right)) 124px max(52px, env(safe-area-inset-left));
+}
+
+.native-macos .screen-body.edge-to-edge {
+  padding: 0;
 }
 
 .screen-body.edge-to-edge {
@@ -93,6 +117,22 @@ textarea {
   gap: 2px;
   padding: 8px 18px 12px;
   background: var(--bg);
+}
+
+.native-macos .bottom-nav {
+  position: fixed;
+  left: 50%;
+  right: auto;
+  bottom: 0;
+  z-index: 50;
+  max-width: 720px;
+  width: min(720px, calc(100vw - 96px));
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 10px 18px max(18px, env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(26, 23, 20, 0.08);
+  border-radius: 22px 22px 0 0;
+  box-shadow: 0 -18px 36px rgba(26, 23, 20, 0.08);
 }
 
 .nav-tab,

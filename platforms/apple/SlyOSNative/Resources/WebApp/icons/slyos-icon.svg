@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SlyOS">
+  <rect width="512" height="512" rx="112" fill="#f4efe6"/>
+  <circle cx="256" cy="256" r="156" fill="#f6d9c8"/>
+  <circle cx="256" cy="256" r="118" fill="#ec5f2a"/>
+  <g fill="none" stroke="#fff8ef" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="196" y="196" width="120" height="120" rx="10"/>
+    <rect x="230" y="230" width="52" height="52" rx="5"/>
+    <path d="M176 222h-36M176 256h-36M176 290h-36M336 222h36M336 256h36M336 290h36M222 176v-36M256 176v-36M290 176v-36M222 336v36M256 336v36M290 336v36"/>
+  </g>
+</svg>

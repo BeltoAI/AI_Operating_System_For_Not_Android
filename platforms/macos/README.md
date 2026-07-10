@@ -1,6 +1,22 @@
 # macOS
 
-Recommended shape: shared desktop agent shell with native macOS adapter.
+There is now a literal native macOS app wrapper:
+
+```bash
+npm run macos:app
+open platforms/macos/build/SlyOS.app
+```
+
+That app uses WebKit to run the same SlyOS shell built from `platforms/desktop-shell/src`, so UI edits flow into the Mac app after rebuild.
+
+Current behavior:
+
+- borderless native `.app`
+- fills the active Mac display
+- hides the Dock/menu bar while open
+- places the SlyOS bottom nav over the bottom frame
+- includes generated SlyOS app icons
+- ad-hoc signed for local testing, not notarized
 
 Closest parity surfaces:
 
