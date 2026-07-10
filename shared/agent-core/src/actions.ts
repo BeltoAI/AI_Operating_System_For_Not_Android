@@ -86,8 +86,10 @@ export function makeAction(
 export function planPrompt(prompt: string): AgentPlan {
   const text = prompt.trim();
   const lower = text.toLowerCase();
-  const actions: AgentAction[] = [];
-  const notes: string[] = [];
+  const actions: AgentAction[] = [
+    makeAction("memory_search", "Build brain context", "read_only", { prompt: text })
+  ];
+  const notes: string[] = ["Every prompt starts by building the memory/profile/context brain."];
 
   if (!text) {
     return {
@@ -139,11 +141,8 @@ export function planPrompt(prompt: string): AgentPlan {
     actions.push(makeAction("memory_search", "Search the memory brain", "read_only", { prompt: text }));
   }
 
-  if (actions.length === 0) {
-    actions.push(
-      makeAction("memory_search", "Gather personal context", "read_only", { prompt: text }),
-      makeAction("web_search", "Gather live context if needed", "read_only", { prompt: text })
-    );
+  if (actions.length === 1) {
+    actions.push(makeAction("web_search", "Gather live context if needed", "read_only", { prompt: text }));
   }
 
   return {
@@ -169,4 +168,3 @@ export function cryptoId(prefix: string): string {
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${prefix}_${random}`;
 }
-

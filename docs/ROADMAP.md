@@ -8,7 +8,7 @@
 - Create per-platform capability maps.
 - Add smoke/parity test descriptions before implementation.
 
-Status: started. The shared TypeScript core, desktop shell, Supabase schema, and iOS source scaffold now exist.
+Status: started. The shared TypeScript core, SlyOS-matched desktop shell, Supabase schema, and iOS source scaffold now exist.
 
 ## Phase 1: Shared core contracts
 
@@ -33,7 +33,7 @@ Target macOS, Linux, and Windows together.
 - screenshot/screen context capture
 - explicit confirmation for sends, posts, payments, deletes, and external actions
 
-Current implementation: Vite/TypeScript shell. Native packaging and OS adapters are next.
+Current implementation: Vite/TypeScript shell that mirrors Android SlyOS Boot, Lock, Home, Now, Memory, Apps, and Manual surfaces. Native packaging and OS adapters are next.
 
 ## Phase 3: iOS companion
 

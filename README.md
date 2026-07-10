@@ -24,7 +24,7 @@ This repo now contains:
 - shared action risk/confirmation contract
 - local browser memory store
 - optional Supabase memory/settings sync client
-- runnable desktop web shell for macOS/Linux/Windows development
+- runnable SlyOS-matched desktop web shell for macOS/Linux/Windows development
 - iOS SwiftUI/App Intents source scaffold
 - Supabase setup SQL with RLS
 - OS parity matrix and platform notes
@@ -135,14 +135,29 @@ platforms/desktop-shell
 
 This is the first shared macOS/Linux/Windows surface. It currently provides:
 
-- command center
-- Android-style action planning
-- visible confirmation-gated action queue
-- local memory brain
-- optional Supabase magic-link sync UI
-- OS parity view
+- SlyOS Boot → Lock → Home flow
+- exact warm ivory/orange/ink design-token palette from the Android preview
+- Caveat wordmark and Inter/SF-style UI font stack
+- Android-style Home prompt: "what should happen?"
+- Look, Docs, Expenses, and Setup launcher shortcuts
+- bottom SlyOS nav with Brain centered and emphasized
+- Now feed with suggested action, catch-up brief, waiting threads, and reply drafts
+- Memory screen with ask/search, graph-like memory map, and remember flow
+- Manual Mode fallback with agent pause/resume
+- visible confirmation-gated Brain action queue
+- optional Supabase magic-link sync UI in Setup
 
 The native desktop plan is to wrap this shell with Tauri once Rust is installed, then add per-OS adapters for screen capture, accessibility, shortcuts, tray/menu, filesystem, terminal, browser, and local model integrations.
+
+Visual source of truth:
+
+```text
+/Users/emilshirokikh/Downloads/MADSCIENTIST/agentos/ui/tokens.json
+/Users/emilshirokikh/Downloads/MADSCIENTIST/agentos/ui/screens/preview.html
+/Users/emilshirokikh/Downloads/MADSCIENTIST/agentos/android/AgentShell/src/main/java/com/agentos/shell/screens
+```
+
+The shell is now intentionally phone/OS-like, not dashboard-like.
 
 ### iOS companion
 
