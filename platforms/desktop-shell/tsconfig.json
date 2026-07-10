@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["vite/client"],
+    "paths": {
+      "@badscientist/agent-core": ["../../shared/agent-core/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

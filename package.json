@@ -1,0 +1,26 @@
+{
+  "name": "badscientist",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Cross-platform SlyOS / AgentOS rebuild foundation for iOS, macOS, Linux, and Windows.",
+  "type": "module",
+  "workspaces": [
+    "shared/agent-core",
+    "platforms/desktop-shell"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "dev": "npm run dev -w @badscientist/desktop-shell",
+    "typecheck": "npm run typecheck --workspaces"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vite": "8.1.4"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.110.2"
+  }
+}

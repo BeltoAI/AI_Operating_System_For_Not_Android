@@ -8,6 +8,8 @@
 - Create per-platform capability maps.
 - Add smoke/parity test descriptions before implementation.
 
+Status: started. The shared TypeScript core, desktop shell, Supabase schema, and iOS source scaffold now exist.
+
 ## Phase 1: Shared core contracts
 
 - Agent action schema
@@ -31,6 +33,8 @@ Target macOS, Linux, and Windows together.
 - screenshot/screen context capture
 - explicit confirmation for sends, posts, payments, deletes, and external actions
 
+Current implementation: Vite/TypeScript shell. Native packaging and OS adapters are next.
+
 ## Phase 3: iOS companion
 
 - SwiftUI app
@@ -42,6 +46,8 @@ Target macOS, Linux, and Windows together.
 - receipt/doc ingestion
 - memory search
 - explicit action drafts
+
+Current implementation: SwiftUI/App Intents source scaffold. Xcode project wiring is next.
 
 ## Phase 4: Cross-platform sync and website
 
@@ -56,4 +62,3 @@ Target macOS, Linux, and Windows together.
 - Compare Android behavior against each platform.
 - Track every unsupported feature as limitation or workaround.
 - Run device tests on MacBook, Linux PC, Windows PC, iPhone, and Android phone.
-
