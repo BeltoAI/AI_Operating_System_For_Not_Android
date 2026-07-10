@@ -24,8 +24,8 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Build web PWA artifact
-        run: npm run release:web
+      - name: Build release artifacts
+        run: npm run release:all
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2

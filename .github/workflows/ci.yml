@@ -27,12 +27,12 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Build web PWA artifact
-        run: npm run release:web
+      - name: Build release artifacts
+        run: npm run release:all
 
-      - name: Upload web PWA artifact
+      - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: slyos-web-pwa
+          name: slyos-release-artifacts
           path: release-artifacts/*.zip
           if-no-files-found: error

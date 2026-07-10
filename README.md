@@ -68,19 +68,22 @@ npm run typecheck
 npm run build
 ```
 
-Build a downloadable PWA artifact:
+Build downloadable release artifacts:
 
 ```bash
-npm run release:web
+npm run release:all
 ```
 
-Output:
+Outputs:
 
 ```text
 release-artifacts/slyos-web-pwa-<version>-<commit>.zip
+release-artifacts/slyos-desktop-agent-<version>-<commit>.zip
 ```
 
-That ZIP is the current cross-device install path. Host the `app/` folder inside it, then install it as a PWA from Safari on iPhone/iPad or Chrome/Edge on desktop.
+The PWA ZIP is the current cross-device app install path. Host the `app/` folder inside it, then install it as a PWA from Safari on iPhone/iPad or Chrome/Edge on desktop.
+
+The desktop-agent ZIP is the native-power bridge for macOS, Linux, and Windows. Download it to the target computer, run it locally, and connect the SlyOS shell to its localhost URL/token when desktop OS actions are needed.
 
 Run the local desktop device bridge:
 
