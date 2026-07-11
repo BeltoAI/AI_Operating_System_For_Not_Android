@@ -94,7 +94,66 @@ interface VaultRecord {
   updatedAt: string;
 }
 
+type OutboxStatus = "draft" | "sent" | "done" | "recalled" | "failed";
+
+interface OutboxRecord {
+  id: string;
+  title: string;
+  target: string;
+  channel: string;
+  body: string;
+  why: string;
+  status: OutboxStatus;
+  createdAt: string;
+  updatedAt: string;
+  recalledAt?: string;
+}
+
+type NowTaskStatus = "waiting" | "drafted" | "sent" | "closed";
+
+interface NowTask {
+  id: string;
+  contact: string;
+  app: string;
+  pkg?: string;
+  text: string;
+  draft?: string;
+  status: NowTaskStatus;
+  createdAt: string;
+  updatedAt: string;
+  source: string;
+  screen?: ShellScreen;
+}
+
+interface Proposal {
+  id: string;
+  title: string;
+  subtitle: string;
+  action: "setup" | "model" | "bridge" | "backup" | "reconnect" | "outbox" | "memory";
+  cta: string;
+}
+
+type AppResponseMode = "off" | "draft" | "full";
+
+interface PerAppMode {
+  id: string;
+  label: string;
+  pkg: string;
+  glyph: string;
+  mode: AppResponseMode;
+  updatedAt: string;
+}
+
+interface AutomationPrefs {
+  reconnectWeekly: boolean;
+  spicyDaily: boolean;
+  totalRecall: boolean;
+  lockScreenBrief: boolean;
+  floatingNav: boolean;
+}
+
 type DevicePrimitive = { type: string; [key: string]: unknown };
+type DeviceSequence = DevicePrimitive[];
 
 const memoryStore = createBrowserMemoryStore(window.localStorage, "slyos");
 const queriedRoot = document.querySelector<HTMLDivElement>("#app");
@@ -141,6 +200,32 @@ let providerStatus = providerApiKey ? `${providerLabel(selectedProvider)} key sa
 let agentAnswer = "";
 let agentBusy = false;
 const memorySearchHistoryKey = "slyos:memorySearchHistory";
+const outboxKey = "slyos:outboxRecords";
+const nowTasksKey = "slyos:nowTasks";
+const dismissedProposalsKey = "slyos:dismissedProposals";
+const perAppModesKey = "slyos:perAppModes";
+const automationPrefsKey = "slyos:automationPrefs";
+
+const defaultAutomationPrefs: AutomationPrefs = {
+  reconnectWeekly: true,
+  spicyDaily: false,
+  totalRecall: false,
+  lockScreenBrief: true,
+  floatingNav: true
+};
+
+const defaultPerAppModes: Array<Omit<PerAppMode, "mode" | "updatedAt">> = [
+  { id: "messages", label: "Messages", pkg: "com.apple.MobileSMS", glyph: "M" },
+  { id: "whatsapp", label: "WhatsApp", pkg: "net.whatsapp.WhatsApp", glyph: "W" },
+  { id: "telegram", label: "Telegram", pkg: "org.telegram.messenger", glyph: "T" },
+  { id: "gmail", label: "Gmail", pkg: "com.google.Gmail", glyph: "G" },
+  { id: "mail", label: "Mail", pkg: "com.apple.mail", glyph: "M" },
+  { id: "x", label: "X", pkg: "com.atebits.Tweetie2", glyph: "X" },
+  { id: "linkedin", label: "LinkedIn", pkg: "com.linkedin.LinkedIn", glyph: "in" },
+  { id: "instagram", label: "Instagram", pkg: "com.burbn.instagram", glyph: "I" },
+  { id: "slack", label: "Slack", pkg: "com.tinyspeck.chatlyio", glyph: "S" },
+  { id: "discord", label: "Discord", pkg: "com.hammerandchisel.discord", glyph: "D" }
+];
 
 if (supabaseUrl && supabasePublishableKey) {
   syncClient = createBrainSyncClient({ url: supabaseUrl, publishableKey: supabasePublishableKey });
@@ -154,6 +239,7 @@ const routeScreens = new Set<ShellScreen>([
   "now",
   "outbox",
   "reconnect",
+  "people",
   "memory",
   "memory-settings",
   "feature-parity",
@@ -406,8 +492,252 @@ function rememberMemorySearch(query: string): void {
   window.localStorage.setItem(memorySearchHistoryKey, JSON.stringify(next));
 }
 
+function readJsonStorage<T>(key: string, fallback: T): T {
+  const raw = window.localStorage.getItem(key);
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJsonStorage<T>(key: string, value: T): void {
+  window.localStorage.setItem(key, JSON.stringify(value));
+}
+
 function agentResponses(): MemoryItem[] {
   return localMemories().filter((item) => item.tags.includes("agent-response"));
+}
+
+function outboxRecords(): OutboxRecord[] {
+  return readJsonStorage<OutboxRecord[]>(outboxKey, [])
+    .filter(isOutboxRecord)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+function saveOutboxRecords(records: OutboxRecord[]): void {
+  writeJsonStorage(outboxKey, records);
+}
+
+function isOutboxRecord(value: unknown): value is OutboxRecord {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === "string" &&
+    typeof record.title === "string" &&
+    typeof record.target === "string" &&
+    typeof record.channel === "string" &&
+    typeof record.body === "string" &&
+    typeof record.why === "string" &&
+    typeof record.status === "string" &&
+    typeof record.createdAt === "string" &&
+    typeof record.updatedAt === "string"
+  );
+}
+
+function recordOutbox(input: Omit<OutboxRecord, "id" | "createdAt" | "updatedAt">): OutboxRecord {
+  const now = new Date().toISOString();
+  const record: OutboxRecord = {
+    ...input,
+    id: localId("outbox"),
+    createdAt: now,
+    updatedAt: now
+  };
+  saveOutboxRecords([record, ...outboxRecords()].slice(0, 200));
+  memoryStore.add({
+    kind: "message",
+    title: `Outbox: ${input.title}`,
+    body: `${input.body}\n\nWhy: ${input.why}`,
+    tags: ["outbox", "action-log", "brain", input.status],
+    source: input.channel
+  });
+  return record;
+}
+
+function nowTasks(): NowTask[] {
+  return readJsonStorage<NowTask[]>(nowTasksKey, [])
+    .filter(isNowTask)
+    .filter((task) => task.status !== "sent" && task.status !== "closed")
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+function saveNowTasks(tasks: NowTask[]): void {
+  writeJsonStorage(nowTasksKey, tasks.filter(isNowTask).slice(0, 200));
+}
+
+function isNowTask(value: unknown): value is NowTask {
+  if (!value || typeof value !== "object") return false;
+  const task = value as Record<string, unknown>;
+  return (
+    typeof task.id === "string" &&
+    typeof task.contact === "string" &&
+    typeof task.app === "string" &&
+    typeof task.text === "string" &&
+    typeof task.status === "string" &&
+    typeof task.createdAt === "string" &&
+    typeof task.updatedAt === "string" &&
+    typeof task.source === "string"
+  );
+}
+
+function taskFeed(): NowTask[] {
+  const blockers = setupBlockers().map((blocker): NowTask => {
+    const now = new Date().toISOString();
+    return {
+      id: `blocker:${slugify(blocker)}`,
+      contact: blocker,
+      app: "Setup",
+      text: blockerHelp(blocker),
+      status: "waiting",
+      createdAt: now,
+      updatedAt: now,
+      source: "setup",
+      screen: blockerScreen(blocker)
+    };
+  });
+  return [...blockers, ...nowTasks()];
+}
+
+function proposalFeed(): Proposal[] {
+  const dismissed = new Set(dismissedProposalIds());
+  const proposals: Proposal[] = [];
+  const responses = agentResponses();
+  const sent = outboxRecords();
+  const people = peopleMemories();
+
+  if (!setupComplete) {
+    proposals.push({
+      id: "setup",
+      title: "Finish setup",
+      subtitle: "Complete profile, model, sync, and device-control wiring.",
+      action: "setup",
+      cta: "Open"
+    });
+  }
+  if (!providerApiKey.trim()) {
+    proposals.push({
+      id: "model",
+      title: "Add model key",
+      subtitle: "Live replies, drafts, memory answers, and research need a provider key.",
+      action: "model",
+      cta: "Add"
+    });
+  }
+  if (nativePlatform !== "ios" && !deviceBridgeStatus.startsWith("bridge online") && !deviceBridgeStatus.startsWith("device observed")) {
+    proposals.push({
+      id: "bridge",
+      title: "Check Mac device bridge",
+      subtitle: "Enables observe, open app, type, hotkeys, clipboard, click, and scroll.",
+      action: "bridge",
+      cta: "Check"
+    });
+  }
+  if (syncClient && localMemories().length > 0 && !syncStatus.startsWith("Pushed")) {
+    proposals.push({
+      id: "backup",
+      title: "Push brain backup",
+      subtitle: `${localMemories().length} local brain item${localMemories().length === 1 ? "" : "s"} can sync to Supabase after sign-in.`,
+      action: "backup",
+      cta: "Push"
+    });
+  }
+  if (responses.length > 0 || sent.length > 0) {
+    proposals.push({
+      id: "outbox",
+      title: "Review sent-for-you",
+      subtitle: `${sent.length + responses.length} agent output${sent.length + responses.length === 1 ? "" : "s"} ready to inspect or recall.`,
+      action: "outbox",
+      cta: "Review"
+    });
+  }
+  if (people.length > 0) {
+    proposals.push({
+      id: "reconnect",
+      title: `Reconnect with ${people[0]?.title ?? "your network"}`,
+      subtitle: "People memories can become ready-to-send drafts.",
+      action: "reconnect",
+      cta: "Open"
+    });
+  }
+
+  return proposals.filter((proposal) => !dismissed.has(proposal.id)).slice(0, 5);
+}
+
+function dismissedProposalIds(): string[] {
+  return readJsonStorage<string[]>(dismissedProposalsKey, []).filter((item): item is string => typeof item === "string");
+}
+
+function dismissProposal(id: string): void {
+  writeJsonStorage(dismissedProposalsKey, Array.from(new Set([id, ...dismissedProposalIds()])).slice(0, 100));
+}
+
+function automationPrefs(): AutomationPrefs {
+  return { ...defaultAutomationPrefs, ...readJsonStorage<Partial<AutomationPrefs>>(automationPrefsKey, {}) };
+}
+
+function saveAutomationPrefs(prefs: AutomationPrefs): void {
+  writeJsonStorage(automationPrefsKey, prefs);
+  memoryStore.setSetting("automationPrefs", prefs);
+}
+
+function perAppModes(): PerAppMode[] {
+  const stored = readJsonStorage<PerAppMode[]>(perAppModesKey, []).filter(isPerAppMode);
+  const storedById = new Map(stored.map((item) => [item.id, item]));
+  const now = new Date().toISOString();
+  const base = defaultPerAppModes.map((item): PerAppMode => {
+    const storedItem = storedById.get(item.id);
+    return {
+      ...item,
+      mode: storedItem?.mode ?? "draft",
+      updatedAt: storedItem?.updatedAt ?? now
+    };
+  });
+  const personaRows = localMemories()
+    .filter((item) => item.tags.includes("persona"))
+    .map((item): PerAppMode => {
+      const label = item.title.replace(/^Persona:\s*/i, "").trim() || item.source || "Custom";
+      const id = `persona:${slugify(label)}`;
+      const storedItem = storedById.get(id);
+      return {
+        id,
+        label,
+        pkg: item.source,
+        glyph: label.slice(0, 2).toUpperCase(),
+        mode: storedItem?.mode ?? "draft",
+        updatedAt: storedItem?.updatedAt ?? item.updatedAt
+      };
+    });
+  const seen = new Set<string>();
+  return [...base, ...personaRows].filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function savePerAppMode(id: string, mode: AppResponseMode): void {
+  const now = new Date().toISOString();
+  const next = perAppModes().map((item) => (item.id === id ? { ...item, mode, updatedAt: now } : item));
+  savePerAppModes(next);
+  memoryStore.setSetting(`perAppMode:${id}`, mode);
+}
+
+function savePerAppModes(modes: PerAppMode[]): void {
+  writeJsonStorage(perAppModesKey, modes.filter(isPerAppMode));
+}
+
+function isPerAppMode(value: unknown): value is PerAppMode {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.id === "string" &&
+    typeof row.label === "string" &&
+    typeof row.pkg === "string" &&
+    typeof row.glyph === "string" &&
+    (row.mode === "off" || row.mode === "draft" || row.mode === "full") &&
+    typeof row.updatedAt === "string"
+  );
 }
 
 function chatMemories(): MemoryItem[] {
@@ -678,11 +1008,13 @@ function renderAction(action: AgentAction): string {
 }
 
 function renderNow(): string {
-  const blockers = setupBlockers();
+  const proposals = proposalFeed();
+  const tasks = taskFeed();
   const memoryCount = localMemories().length;
-  const summary = blockers.length
-    ? `SlyOS needs ${blockers.length} setup item${blockers.length === 1 ? "" : "s"} before it can operate cleanly.`
-    : `SlyOS is online with ${memoryCount} local memor${memoryCount === 1 ? "y" : "ies"} and ${agentResponses().length} agent output${agentResponses().length === 1 ? "" : "s"}.`;
+  const outputCount = outboxRecords().length + agentResponses().length;
+  const summary = tasks.length
+    ? `SlyOS has ${tasks.length} item${tasks.length === 1 ? "" : "s"} waiting and ${proposals.length} suggestion${proposals.length === 1 ? "" : "s"} ready.`
+    : `SlyOS is quiet with ${memoryCount} local memor${memoryCount === 1 ? "y" : "ies"} and ${outputCount} sent-for-you record${outputCount === 1 ? "" : "s"}.`;
   return `
     <div class="panel-screen">
       ${screenHeader("Now")}
@@ -691,32 +1023,118 @@ function renderNow(): string {
         <button data-screen="outbox">Sent for you</button>
         <button data-screen="reconnect">Reconnect</button>
       </div>
+      ${
+        proposals.length
+          ? `<div class="section-label">Suggested for you</div>
+             <div class="proposal-list">${proposals.map(renderProposal).join("")}</div>`
+          : ""
+      }
       <section class="brief-card">
         <div class="brief-head">
           <span>What you missed</span>
-          <button type="button" data-screen="setup">↻</button>
+          <button type="button" data-refresh-now="true">↻</button>
         </div>
         <p>${escapeHtml(summary)}</p>
-        <strong>${escapeHtml(providerStatus)}</strong>
+        <strong>${escapeHtml(nowTextBack(tasks, proposals))}</strong>
       </section>
-      <div class="section-label">Waiting on you · ${blockers.length}</div>
+      <div class="section-label">Waiting on you · ${tasks.length}</div>
       <div class="thread-list">
-        ${blockers.length ? blockers.map(renderBlocker).join("") : `<p class="empty-state">No setup blockers right now.</p>`}
+        ${
+          tasks.length
+            ? tasks.map(renderNowTask).join("")
+            : `<div class="now-empty">
+                <p>Nothing waiting right now.</p>
+                <small>${escapeHtml(nowEmptyCopy())}</small>
+              </div>`
+        }
       </div>
     </div>
   `;
 }
 
+function renderProposal(proposal: Proposal): string {
+  return `
+    <article class="proposal-card">
+      <div>
+        <strong>${escapeHtml(proposal.title)}</strong>
+        <span>${escapeHtml(proposal.subtitle)}</span>
+      </div>
+      <div class="proposal-actions">
+        <button class="confirm" type="button" data-proposal-confirm="${escapeAttr(proposal.id)}">${escapeHtml(proposal.cta)} ✓</button>
+        <button type="button" data-proposal-dismiss="${escapeAttr(proposal.id)}">Dismiss</button>
+      </div>
+    </article>
+  `;
+}
+
+function renderNowTask(task: NowTask): string {
+  const isSetupTask = task.source === "setup";
+  return `
+    <article class="thread-card now-task">
+      <div class="avatar-wrap">
+        <div class="avatar" style="background:${appColor(task.app, task.pkg)}">${escapeHtml(task.contact[0] ?? "S")}</div>
+        <div class="app-badge" style="background:${appColor(task.app, task.pkg)}">${escapeHtml(task.app.slice(0, 1).toUpperCase())}</div>
+      </div>
+      <div class="thread-body">
+        <div class="thread-top">
+          <strong>${escapeHtml(task.contact)}</strong>
+          <span>${escapeHtml(task.status)}</span>
+        </div>
+        <p><span>via ${escapeHtml(task.app)}</span></p>
+        <blockquote>${escapeHtml(task.text)}</blockquote>
+        ${task.draft ? `<div class="inline-draft"><span>draft</span><p>${escapeHtml(task.draft)}</p></div>` : ""}
+        <div class="thread-actions">
+          ${
+            isSetupTask
+              ? `<button type="button" data-task-open="${escapeAttr(task.id)}">Open ↗</button>`
+              : `<button type="button" data-task-draft="${escapeAttr(task.id)}">${task.draft ? "Regenerate" : "Draft"}</button>
+                 <button type="button" data-task-send="${escapeAttr(task.id)}" ${task.draft ? "" : "disabled"}>Send</button>
+                 <button type="button" data-task-dismiss="${escapeAttr(task.id)}">Close</button>
+                 <button type="button" data-task-open="${escapeAttr(task.id)}">Open ↗</button>`
+          }
+        </div>
+      </div>
+    </article>
+  `;
+}
+
 function renderOutbox(): string {
-  const sent = agentResponses();
+  const sent = outboxRecords();
+  const generated = agentResponses().filter((item) => !item.tags.includes("outbox"));
   return `
     <div class="panel-screen outbox-screen">
       ${screenHeader("Sent for you", "now")}
-      <p class="screen-subtitle">Everything the agent produced on your behalf from your prompt, memory, and model key.</p>
+      <p class="screen-subtitle">Everything the agent did or drafted on your behalf — what, to whom, and why. Recall writes a retraction note into memory.</p>
       <div class="sent-list">
-        ${sent.length ? sent.map(renderSentItem).join("") : `<p class="empty-state">No agent outputs yet. Run a prompt from Home.</p>`}
+        ${sent.length ? sent.map(renderOutboxRecord).join("") : ""}
+        ${generated.length ? generated.slice(0, 12).map(renderSentItem).join("") : ""}
+        ${!sent.length && !generated.length ? `<p class="empty-state">No agent outputs yet. Run a prompt from Home.</p>` : ""}
       </div>
     </div>
+  `;
+}
+
+function renderOutboxRecord(record: OutboxRecord): string {
+  return `
+    <article class="sent-card ${record.status === "recalled" ? "recalled" : ""}">
+      <div class="sent-top">
+        <div>
+          <h3>${escapeHtml(record.target)}</h3>
+          <span>${escapeHtml(record.channel)} · ${escapeHtml(new Date(record.createdAt).toLocaleString())}</span>
+        </div>
+        <b>${escapeHtml(record.status)}</b>
+      </div>
+      <p>${escapeHtml(record.body)}</p>
+      <small>↳ ${escapeHtml(record.why)}</small>
+      <div class="outbox-actions">
+        ${
+          record.status === "recalled"
+            ? `<button type="button" data-outbox-delete="${escapeAttr(record.id)}">Delete</button>`
+            : `<button type="button" data-outbox-recall="${escapeAttr(record.id)}">Recall</button>
+               <button type="button" data-outbox-delete="${escapeAttr(record.id)}">Delete</button>`
+        }
+      </div>
+    </article>
   `;
 }
 
@@ -732,7 +1150,9 @@ function renderSentItem(item: MemoryItem): string {
       </div>
       <p>${escapeHtml(item.body)}</p>
       <small>↳ generated through your selected model using local brain context</small>
-      <button type="button" data-screen="home">Use again</button>
+      <div class="outbox-actions">
+        <button type="button" data-screen="home">Use again</button>
+      </div>
     </article>
   `;
 }
@@ -812,6 +1232,43 @@ function blockerHelp(blocker: string): string {
   if (blocker.includes("API")) return "Paste a Gemini, OpenAI, or Claude key so prompts produce live model output.";
   if (blocker.includes("Supabase")) return "Connect the Supabase project to sync memory and settings across devices.";
   return "Start the local Mac bridge and check it so SlyOS can observe and operate this computer.";
+}
+
+function blockerScreen(blocker: string): ShellScreen {
+  if (blocker.includes("API")) return "models";
+  if (blocker.includes("Supabase")) return "backup";
+  if (blocker.includes("bridge")) return "setup";
+  return "setup";
+}
+
+function nowTextBack(tasks: NowTask[], proposals: Proposal[]): string {
+  if (tasks.length) return tasks[0]?.source === "setup" ? "Text back: finish setup first." : "Text back: draft is waiting.";
+  if (proposals.length) return `Text back: ${proposals[0]?.title.toLowerCase()}.`;
+  return "Text back: nobody right now.";
+}
+
+function nowEmptyCopy(): string {
+  if (nativePlatform === "ios") {
+    return "iOS does not expose system notifications to third-party apps; import/share into SlyOS or use Shortcuts handoff.";
+  }
+  if (nativePlatform === "macos") {
+    return "Grant Screen Recording and Accessibility, then use Operate or imports to feed live work into this queue.";
+  }
+  return "Import messages, documents, or prompt SlyOS to create work for this queue.";
+}
+
+function appColor(app: string, pkg = ""): string {
+  const key = `${app} ${pkg}`.toLowerCase();
+  if (key.includes("whatsapp")) return "#25d366";
+  if (key.includes("telegram")) return "#26a5e4";
+  if (key.includes("instagram")) return "#c13584";
+  if (key.includes("gmail") || key.includes("mail")) return "#ea4335";
+  if (key.includes("message") || key.includes("sms")) return "#1a73e8";
+  if (key.includes("linkedin")) return "#0a66c2";
+  if (key.includes("slack")) return "#4a154b";
+  if (key.includes("discord")) return "#5865f2";
+  if (key.includes("setup")) return "#e8642c";
+  return "#e8642c";
 }
 
 function renderMemory(): string {
@@ -1252,9 +1709,28 @@ function renderModels(): string {
 
 function renderPerApp(): string {
   const personas = localMemories().filter((item) => item.tags.includes("persona"));
+  const modes = perAppModes();
+  const prefs = automationPrefs();
   return `
     <div class="panel-screen per-app-screen">
       ${screenHeader("Per-app responses", "memory-settings")}
+      <p class="screen-subtitle">Pick how each app behaves. Draft pre-writes and waits on Now; Auto records the intent but still obeys platform safety limits.</p>
+      <div class="app-mode-list">
+        ${modes.map(renderPerAppMode).join("")}
+      </div>
+      <section class="brief-card automation-card">
+        <div class="brief-head">
+          <span>Automation</span>
+          <button type="button" data-screen="now">Now</button>
+        </div>
+        <div class="pref-list">
+          ${renderPrefToggle("reconnectWeekly", "Weekly reconnect nudge", "People you have gone quiet on surface with a ready draft.", prefs.reconnectWeekly)}
+          ${renderPrefToggle("spicyDaily", "Daily spicy take", "A morning draft can be staged in Sent for you.", prefs.spicyDaily)}
+          ${renderPrefToggle("totalRecall", "Total recall", "Save observed screens and manual actions into memory.", prefs.totalRecall)}
+          ${renderPrefToggle("lockScreenBrief", "Lock-screen brief", "Show top priorities on the SlyOS lock surface.", prefs.lockScreenBrief)}
+          ${renderPrefToggle("floatingNav", "Floating nav panel", floatingNavCopy(), prefs.floatingNav)}
+        </div>
+      </section>
       <form id="persona-form" class="stack-form">
         <input id="persona-app" placeholder="App or person" />
         <textarea id="persona-style" placeholder="How SlyOS should sound there..."></textarea>
@@ -1266,6 +1742,49 @@ function renderPerApp(): string {
       </div>
     </div>
   `;
+}
+
+function renderPerAppMode(item: PerAppMode): string {
+  const modes: Array<{ id: AppResponseMode; label: string }> = [
+    { id: "off", label: "Off" },
+    { id: "draft", label: "Draft" },
+    { id: "full", label: "Auto" }
+  ];
+  return `
+    <article class="app-mode-row">
+      <div class="app-mode-icon">${escapeHtml(item.glyph)}</div>
+      <div class="app-mode-copy">
+        <strong>${escapeHtml(item.label)}</strong>
+        <span>${escapeHtml(perAppModeCopy(item.mode))}</span>
+      </div>
+      <div class="mode-toggle" role="group" aria-label="${escapeAttr(item.label)} response mode">
+        ${modes
+          .map(
+            (mode) =>
+              `<button class="${item.mode === mode.id ? "active" : ""}" type="button" data-app-mode="${mode.id}" data-app-id="${escapeAttr(item.id)}">${escapeHtml(mode.label)}</button>`
+          )
+          .join("")}
+      </div>
+    </article>
+  `;
+}
+
+function renderPrefToggle(key: keyof AutomationPrefs, title: string, subtitle: string, active: boolean): string {
+  return `
+    <button class="pref-row ${active ? "active" : ""}" type="button" data-pref-toggle="${key}">
+      <span>
+        <strong>${escapeHtml(title)}</strong>
+        <small>${escapeHtml(subtitle)}</small>
+      </span>
+      <b>${active ? "On" : "Off"}</b>
+    </button>
+  `;
+}
+
+function perAppModeCopy(mode: AppResponseMode): string {
+  if (mode === "off") return "Never reply here automatically.";
+  if (mode === "full") return "Auto mode after confirmation-safe routing.";
+  return "Draft and wait for your tap.";
 }
 
 function renderImports(): string {
@@ -1578,6 +2097,83 @@ function wireEvents(): void {
     void observeDeviceFromPrompt();
   });
 
+  document.querySelector("[data-refresh-now]")?.addEventListener("click", () => {
+    deviceBridgeObservation = taskFeed().length ? "Now refreshed from local brain, setup state, outbox, and bridge status." : "";
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-proposal-confirm]").forEach((element) => {
+    element.addEventListener("click", () => {
+      void confirmProposal(element.dataset.proposalConfirm ?? "");
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-proposal-dismiss]").forEach((element) => {
+    element.addEventListener("click", () => {
+      const id = element.dataset.proposalDismiss;
+      if (!id) return;
+      dismissProposal(id);
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-task-draft]").forEach((element) => {
+    element.addEventListener("click", () => {
+      void draftTask(element.dataset.taskDraft ?? "");
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-task-send]").forEach((element) => {
+    element.addEventListener("click", () => {
+      sendTask(element.dataset.taskSend ?? "");
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-task-dismiss]").forEach((element) => {
+    element.addEventListener("click", () => {
+      closeTask(element.dataset.taskDismiss ?? "");
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-task-open]").forEach((element) => {
+    element.addEventListener("click", () => {
+      openTask(element.dataset.taskOpen ?? "");
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-outbox-recall]").forEach((element) => {
+    element.addEventListener("click", () => {
+      recallOutbox(element.dataset.outboxRecall ?? "");
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-outbox-delete]").forEach((element) => {
+    element.addEventListener("click", () => {
+      deleteOutbox(element.dataset.outboxDelete ?? "");
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-app-mode]").forEach((element) => {
+    element.addEventListener("click", () => {
+      const id = element.dataset.appId ?? "";
+      const mode = element.dataset.appMode as AppResponseMode | undefined;
+      if (!id || !mode) return;
+      savePerAppMode(id, mode);
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-pref-toggle]").forEach((element) => {
+    element.addEventListener("click", () => {
+      const key = element.dataset.prefToggle as keyof AutomationPrefs | undefined;
+      if (!key) return;
+      const prefs = automationPrefs();
+      prefs[key] = !prefs[key];
+      saveAutomationPrefs(prefs);
+      render();
+    });
+  });
+
   document.querySelector("#prompt-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
     void runPrompt();
@@ -1807,18 +2403,212 @@ function wireEvents(): void {
 
   document.querySelector("#device-check")?.addEventListener("click", () => {
     void deviceAction(async () => {
-      saveDeviceBridgeSettings();
-      const payload = await deviceFetch("/capabilities");
-      const enabled = Boolean(payload.capabilities?.deviceControl?.enabled);
-      const click = Boolean(payload.capabilities?.deviceControl?.pointerClick);
-      const type = Boolean(payload.capabilities?.deviceControl?.typeText);
-      deviceBridgeStatus = `bridge online · control ${enabled ? "on" : "off"} · click ${click ? "yes" : "no"} · type ${type ? "yes" : "no"}`;
+      await checkDeviceBridge();
     });
   });
 
   document.querySelector("#device-observe")?.addEventListener("click", () => {
     void observeDeviceFromPrompt();
   });
+}
+
+async function confirmProposal(id: string): Promise<void> {
+  const proposal = proposalFeed().find((item) => item.id === id);
+  if (!proposal) return;
+  recordOutbox({
+    title: proposal.title,
+    target: proposal.title,
+    channel: platformLabel(),
+    body: proposal.subtitle,
+    why: "you confirmed a Now suggestion generated from local brain/setup state",
+    status: "done"
+  });
+  dismissProposal(id);
+
+  if (proposal.action === "setup") {
+    navigate("setup");
+    return;
+  }
+  if (proposal.action === "model") {
+    navigate("models");
+    return;
+  }
+  if (proposal.action === "outbox") {
+    navigate("outbox");
+    return;
+  }
+  if (proposal.action === "reconnect") {
+    navigate("reconnect");
+    return;
+  }
+  if (proposal.action === "memory") {
+    navigate("memory");
+    return;
+  }
+  if (proposal.action === "bridge") {
+    await deviceAction(checkDeviceBridge);
+    navigate("setup");
+    return;
+  }
+  if (proposal.action === "backup") {
+    await syncAction(async () => {
+      if (!syncClient) throw new Error("Configure sync first.");
+      await syncClient.pushMemory(memoryStore.list());
+      await syncClient.pushSettings(memoryStore.listSettings());
+      syncStatus = "Pushed local brain.";
+    });
+    navigate("backup");
+  }
+}
+
+async function draftTask(id: string): Promise<void> {
+  const task = nowTasks().find((item) => item.id === id);
+  if (!task) return;
+  const draft = await buildTaskDraft(task);
+  const next = nowTasks().map((item) =>
+    item.id === id ? { ...item, draft, status: "drafted" as const, updatedAt: new Date().toISOString() } : item
+  );
+  saveNowTasks(next);
+  memoryStore.add({
+    kind: "message",
+    title: `Draft for ${task.contact}`,
+    body: draft,
+    tags: ["draft", "now", "brain"],
+    source: task.app
+  });
+  render();
+}
+
+async function buildTaskDraft(task: NowTask): Promise<string> {
+  const localDraft = `Hey ${firstName(task.contact)}, saw this. ${task.text.slice(0, 110)}`;
+  if (!providerApiKey.trim()) return localDraft;
+  try {
+    return await generateWithProvider({
+      provider: selectedProvider,
+      apiKey: providerApiKey,
+      model: modelName,
+      prompt: `Draft a short reply in my voice. Do not send it.\n\nContact: ${task.contact}\nApp: ${task.app}\nMessage/context: ${task.text}`,
+      memoryContext: buildMemoryContext()
+    });
+  } catch {
+    return localDraft;
+  }
+}
+
+async function stageOutboundRequest(prompt: string): Promise<NowTask> {
+  const parsed = parseOutboundPrompt(prompt);
+  const now = new Date().toISOString();
+  const task: NowTask = {
+    id: localId("task"),
+    contact: parsed.contact,
+    app: parsed.app,
+    text: parsed.context,
+    status: "waiting",
+    createdAt: now,
+    updatedAt: now,
+    source: "home"
+  };
+  const draft = await buildTaskDraft(task);
+  const staged: NowTask = { ...task, draft, status: "drafted", updatedAt: new Date().toISOString() };
+  saveNowTasks([staged, ...nowTasks()]);
+  recordOutbox({
+    title: `Draft for ${staged.contact}`,
+    target: staged.contact,
+    channel: staged.app,
+    body: draft,
+    why: "drafted from a Home prompt and held for your confirmation in Now",
+    status: "draft"
+  });
+  return staged;
+}
+
+function isOutboundRequest(prompt: string): boolean {
+  return /\b(send|text|dm|message|email|reply)\b/i.test(prompt);
+}
+
+function parseOutboundPrompt(prompt: string): { app: string; contact: string; context: string } {
+  const app = /\bemail\b/i.test(prompt) ? "Mail" : /\bdm\b/i.test(prompt) ? "X" : "Messages";
+  const direct = prompt.match(
+    /\b(?:text|message|dm|email|reply to|send(?: an)? email to)\s+(.+?)(?:\s+(?:that|saying|about|and)\s+|:\s*|$)(.*)$/i
+  );
+  const toTarget = prompt.match(/\bto\s+(.+?)(?:\s+(?:that|saying|about|and)\s+|:\s*|$)(.*)$/i);
+  const match = direct ?? toTarget;
+  const contact = cleanOutboundContact(match?.[1] ?? "Someone");
+  const context = (match?.[2] ?? "").trim();
+  return { app, contact, context: context || prompt };
+}
+
+function cleanOutboundContact(value: string): string {
+  return value
+    .replace(/^(?:to|at)\s+/i, "")
+    .replace(/[.,;:!?]+$/g, "")
+    .trim()
+    .slice(0, 60) || "Someone";
+}
+
+function sendTask(id: string): void {
+  const task = nowTasks().find((item) => item.id === id);
+  if (!task || !task.draft) return;
+  recordOutbox({
+    title: `Reply to ${task.contact}`,
+    target: task.contact,
+    channel: task.app,
+    body: task.draft,
+    why: "drafted from your brain/persona and sent from the Now queue",
+    status: "sent"
+  });
+  saveNowTasks(nowTasks().map((item) => (item.id === id ? { ...item, status: "sent", updatedAt: new Date().toISOString() } : item)));
+  render();
+}
+
+function closeTask(id: string): void {
+  saveNowTasks(nowTasks().map((item) => (item.id === id ? { ...item, status: "closed", updatedAt: new Date().toISOString() } : item)));
+  render();
+}
+
+function openTask(id: string): void {
+  const task = taskFeed().find((item) => item.id === id);
+  if (!task) return;
+  if (task.screen) {
+    navigate(task.screen);
+    return;
+  }
+  operatePrompt = `Open ${task.app} for ${task.contact}`;
+  navigate("operate");
+}
+
+function recallOutbox(id: string): void {
+  const records = outboxRecords();
+  const now = new Date().toISOString();
+  const record = records.find((item) => item.id === id);
+  if (!record) return;
+  const next = records.map((item) =>
+    item.id === id ? { ...item, status: "recalled" as const, recalledAt: now, updatedAt: now } : item
+  );
+  saveOutboxRecords(next);
+  memoryStore.add({
+    kind: "message",
+    title: `Recall: ${record.title}`,
+    body: `Recall/retraction for ${record.target}: ${record.body}`,
+    tags: ["recall", "outbox", "brain"],
+    source: record.channel
+  });
+  render();
+}
+
+function deleteOutbox(id: string): void {
+  saveOutboxRecords(outboxRecords().filter((item) => item.id !== id));
+  render();
+}
+
+async function checkDeviceBridge(): Promise<void> {
+  saveDeviceBridgeSettings();
+  const payload = await deviceFetch("/capabilities");
+  const enabled = Boolean(payload.capabilities?.deviceControl?.enabled);
+  const click = Boolean(payload.capabilities?.deviceControl?.pointerClick);
+  const type = Boolean(payload.capabilities?.deviceControl?.typeText);
+  const hotkey = Boolean(payload.capabilities?.deviceControl?.hotkey);
+  deviceBridgeStatus = `bridge online · control ${enabled ? "on" : "off"} · click ${click ? "yes" : "no"} · type ${type ? "yes" : "no"} · keys ${hotkey ? "yes" : "no"}`;
 }
 
 function wireBrainCanvases(): void {
@@ -1935,44 +2725,61 @@ async function runOperatePrimitive(): Promise<void> {
   }
 
   await deviceAction(async () => {
-    const primitive = primitiveActionForPrompt(operatePrompt);
-    await executeDevicePrimitive(operatePrompt, primitive, "operate");
-    operateStatus = `ran ${primitive.type}`;
+    const sequence = primitiveSequenceForPrompt(operatePrompt);
+    await executeDeviceSequence(operatePrompt, sequence, "operate");
+    operateStatus = `ran ${sequence.length} step${sequence.length === 1 ? "" : "s"}`;
   });
 }
 
 async function executeDevicePrimitive(prompt: string, primitive: DevicePrimitive, source: "home" | "operate"): Promise<string> {
+  return executeDeviceSequence(prompt, [primitive], source);
+}
+
+async function executeDeviceSequence(prompt: string, sequence: DeviceSequence, source: "home" | "operate"): Promise<string> {
   saveDeviceBridgeSettings();
   const trace: string[] = [];
-  const observeBefore = primitive.type !== "open_url" && primitive.type !== "open_app";
+  const first = sequence[0];
+  const observeBefore = first && first.type !== "open_url" && first.type !== "open_app";
 
   if (observeBefore) {
     const before = await optionalDeviceObserve();
     if (before) trace.push(describeDevicePayload(before));
   }
 
-  const result = await deviceFetch("/actions", {
-    method: "POST",
-    body: JSON.stringify(primitive)
-  });
-  trace.push(describeDevicePayload(result));
-
-  await deviceFetch("/actions", {
-    method: "POST",
-    body: JSON.stringify({ type: "wait", ms: primitive.type === "open_url" || primitive.type === "open_app" ? 900 : 450 })
-  }).catch(() => undefined);
+  for (const [index, primitive] of sequence.entries()) {
+    const result = await deviceFetch("/actions", {
+      method: "POST",
+      body: JSON.stringify(primitive)
+    });
+    trace.push(`${index + 1}/${sequence.length} ${describeDevicePayload(result)}`);
+    if (primitive.type !== "wait") {
+      await deviceFetch("/actions", {
+        method: "POST",
+        body: JSON.stringify({ type: "wait", ms: primitive.type === "open_url" || primitive.type === "open_app" ? 900 : 320 })
+      }).catch(() => undefined);
+    }
+  }
 
   const after = await optionalDeviceObserve();
   if (after) trace.push(describeDevicePayload(after));
 
   deviceBridgeObservation = trace.filter(Boolean).join(" -> ");
-  deviceBridgeStatus = `ran ${primitive.type}`;
+  deviceBridgeStatus = `ran ${sequence.length} step${sequence.length === 1 ? "" : "s"}`;
+  const title = sequence.length === 1 ? `Ran ${sequence[0]?.type ?? "action"}` : `Ran ${sequence.length}-step loop`;
   memoryStore.add({
     kind: "screen",
-    title: `Ran ${primitive.type}: ${prompt.slice(0, 54)}`,
+    title: `${title}: ${prompt.slice(0, 54)}`,
     body: `${prompt}\n${deviceBridgeObservation}`,
     tags: [source, "operate", "screen", "brain"],
     source: platformLabel()
+  });
+  recordOutbox({
+    title,
+    target: platformLabel(),
+    channel: source === "home" ? "Home prompt" : "Operate",
+    body: prompt,
+    why: `executed through the local device bridge after brain planning: ${sequence.map((item) => item.type).join(" -> ")}`,
+    status: "done"
   });
   return deviceBridgeObservation;
 }
@@ -1993,35 +2800,53 @@ async function optionalDeviceObserve(): Promise<Record<string, any> | null> {
 }
 
 function primitiveActionForPrompt(prompt: string): DevicePrimitive {
+  return primitiveSequenceForPrompt(prompt)[0] ?? { type: "observe_screen" };
+}
+
+function primitiveSequenceForPrompt(prompt: string): DeviceSequence {
   const lower = prompt.toLowerCase();
   const url = prompt.match(/https?:\/\/[^\s"'<>]+/i)?.[0];
-  if (url) return { type: "open_url", url };
+  if (url) return [{ type: "open_url", url }];
 
   const webUrl = urlForPrompt(prompt);
-  if (webUrl) return { type: "open_url", url: webUrl };
+  if (webUrl) return [{ type: "open_url", url: webUrl }];
 
-  const coordinate = lower.match(/\b(?:click|tap)\D+(\d{2,4})\D+(\d{2,4})\b/);
-  if (coordinate) {
-    return {
+  const sequence: DeviceSequence = [];
+  const app = prompt.match(/\bopen\s+([a-z][a-z ]{1,32})(?:$|\.|,| and |\s+then)/i)?.[1]?.trim();
+  if (app) {
+    sequence.push({ type: "open_app", app: normalizeAppName(app) }, { type: "wait", ms: 700 });
+  }
+
+  const clipboardText = prompt.match(/\b(?:copy|set clipboard(?: to)?)\s+["“](.+?)["”]/i)?.[1];
+  if (clipboardText) sequence.push({ type: "set_clipboard", text: clipboardText });
+
+  if (/\b(command|cmd)\s*\+\s*l\b/i.test(prompt)) sequence.push({ type: "hotkey", keys: ["cmd", "l"] });
+
+  const quotedTextMatches = Array.from(prompt.matchAll(/\btype\s+["“](.+?)["”]/gi));
+  for (const match of quotedTextMatches) {
+    if (match[1]) sequence.push({ type: "type_text", text: match[1] });
+  }
+
+  if (/\b(press|hit)\s+(enter|return)\b/i.test(prompt)) sequence.push({ type: "key_press", key: "return", modifiers: [] });
+
+  const coordinates = Array.from(lower.matchAll(/\b(?:click|tap)\D+(\d{2,4})\D+(\d{2,4})\b/g));
+  for (const coordinate of coordinates) {
+    sequence.push({
       type: "pointer_click",
       x: Number(coordinate[1]),
       y: Number(coordinate[2]),
       button: "left",
       clicks: 1
-    };
+    });
   }
 
-  const quotedText = prompt.match(/\btype\s+["“](.+?)["”]/i)?.[1];
-  if (quotedText) return { type: "type_text", text: quotedText };
+  if (/\bscroll\s+up\b/.test(lower)) sequence.push({ type: "scroll", deltaY: -520 });
+  else if (/\bscroll\b/.test(lower)) sequence.push({ type: "scroll", deltaY: 520 });
 
-  const app = prompt.match(/\bopen\s+([a-z][a-z ]{1,32})(?:$|\.|,| and |\s+then)/i)?.[1]?.trim();
-  if (app) return { type: "open_app", app: normalizeAppName(app) };
+  const usefulSequence = sequence.filter((primitive, index) => primitive.type !== "wait" || index < sequence.length - 1);
+  if (usefulSequence.some((primitive) => primitive.type !== "wait")) return usefulSequence;
 
-  if (/\b(command|cmd)\s*\+\s*l\b/i.test(prompt)) return { type: "hotkey", keys: ["cmd", "l"] };
-  if (/\b(press|hit)\s+(enter|return)\b/i.test(prompt)) return { type: "key_press", key: "return", modifiers: [] };
-  if (/\bscroll\s+up\b/.test(lower)) return { type: "scroll", deltaY: -520 };
-  if (/\bscroll\b/.test(lower)) return { type: "scroll", deltaY: 520 };
-  return { type: "observe_screen" };
+  return [{ type: "observe_screen" }];
 }
 
 function urlForPrompt(prompt: string): string | null {
@@ -2062,9 +2887,9 @@ function urlForPrompt(prompt: string): string | null {
   return null;
 }
 
-function shouldAutoRunDeviceAction(prompt: string, primitive: DevicePrimitive): boolean {
+function shouldAutoRunDeviceAction(prompt: string, sequence: DeviceSequence): boolean {
   if (nativePlatform === "ios") return false;
-  if (primitive.type !== "observe_screen") return true;
+  if (sequence.some((primitive) => primitive.type !== "observe_screen" && primitive.type !== "wait")) return true;
   return /\b(observe|look|read|screen|frontmost|what.*open)\b/i.test(prompt);
 }
 
@@ -2338,7 +3163,7 @@ async function runPrompt(): Promise<void> {
   if (!request || agentBusy) return;
 
   const plan = planPrompt(request);
-  const primitive = primitiveActionForPrompt(request);
+  const sequence = primitiveSequenceForPrompt(request);
   lastPlan = null;
   agentAnswer = "";
   memoryStore.add({
@@ -2350,11 +3175,11 @@ async function runPrompt(): Promise<void> {
   });
   promptText = "";
 
-  if (shouldAutoRunDeviceAction(request, primitive)) {
+  if (shouldAutoRunDeviceAction(request, sequence)) {
     agentBusy = true;
     render();
     try {
-      const result = await executeDevicePrimitive(request, primitive, "home");
+      const result = await executeDeviceSequence(request, sequence, "home");
       agentAnswer = `Done. ${result}`;
       memoryStore.add({
         kind: "message",
@@ -2363,6 +3188,21 @@ async function runPrompt(): Promise<void> {
         tags: ["agent-response", "brain", "operate"],
         source: "Mac"
       });
+    } catch (error) {
+      agentAnswer = error instanceof Error ? error.message : String(error);
+    } finally {
+      agentBusy = false;
+      render();
+    }
+    return;
+  }
+
+  if (isOutboundRequest(request)) {
+    agentBusy = true;
+    render();
+    try {
+      const staged = await stageOutboundRequest(request);
+      agentAnswer = `Draft staged for ${staged.contact}. Open Now to review, send, or close it.`;
     } catch (error) {
       agentAnswer = error instanceof Error ? error.message : String(error);
     } finally {
@@ -2488,6 +3328,18 @@ function base64ToBytes(value: string): Uint8Array {
 function localId(prefix: string): string {
   const random = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return `${prefix}_${random}`;
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 56);
+}
+
+function firstName(value: string): string {
+  return value.trim().split(/\s+/)[0] ?? "there";
 }
 
 function escapeHtml(value: string): string {
