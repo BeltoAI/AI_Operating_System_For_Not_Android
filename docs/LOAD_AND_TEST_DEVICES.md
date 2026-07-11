@@ -4,7 +4,18 @@ This guide is for testing what exists today as close to real device use as possi
 
 ## 1. Supabase Sync Setup
 
-Use one Supabase project for every device.
+Use one Supabase project for every device. The current app is prefilled with the SlyOS test project:
+
+```text
+https://xfftheaprdedypqlcvzg.supabase.co
+```
+
+Open `Setup` in SlyOS, create/sign into an account with email and password, then use:
+
+- `Pull brain` on a new device
+- `Push brain` after creating/updating local memory/settings
+
+For a self-hosted Supabase project:
 
 1. Create a Supabase project.
 2. Open the SQL editor.
@@ -32,35 +43,65 @@ Inside Android SlyOS, configure the same Supabase URL/anon key and sign into the
 
 ## 3. iPhone
 
-The current iPhone test path is the installable PWA, not a native App Store/TestFlight app yet.
+There are two iPhone paths today.
 
-1. Download `slyos-web-pwa-*.zip` from the latest GitHub prerelease.
+### Native cabled app
+
+1. Connect the iPhone and trust the Mac on the phone.
+2. Unlock the iPhone and leave it on the home screen.
+3. Enable Developer Mode on iPhone.
+4. Run:
+
+```bash
+cd /Users/emilshirokikh/Downloads/BADSCIENTIST
+npm run apple:xcode
+xcodebuild \
+  -project platforms/apple/SlyOSNative/SlyOSNative.xcodeproj \
+  -scheme SlyOS-iOS \
+  -configuration Debug \
+  -destination 'generic/platform=iOS' \
+  DEVELOPMENT_TEAM=YOUR_TEAM_ID \
+  CODE_SIGN_STYLE=Automatic \
+  build
+```
+
+Find the device:
+
+```bash
+xcrun devicectl list devices
+```
+
+Install and launch:
+
+```bash
+xcrun devicectl device install app --device YOUR_COREDEVICE_ID \
+  ~/Library/Developer/Xcode/DerivedData/SlyOSNative-*/Build/Products/Debug-iphoneos/SlyOS.app
+
+xcrun devicectl device process launch --device YOUR_COREDEVICE_ID com.belto.slyos.ios
+```
+
+If `devicectl` shows the phone as `unavailable` or `tunnelState: unavailable`, unplug/replug the cable, unlock the phone, accept Trust prompts, and rerun `xcrun devicectl list devices`.
+
+### PWA fallback
+
+1. Download `slyos-web-pwa-*.zip` from the latest GitHub release.
 2. Host the `app/` folder from the ZIP on any HTTPS static host.
 3. Open that HTTPS URL in Safari on iPhone.
 4. Tap Share.
 5. Tap Add to Home Screen.
 6. Open SlyOS from the Home Screen.
 7. Open Setup.
-8. Enter the same Supabase URL, publishable/anon key, email, and password.
-9. Tap Configure, Sign in, then Pull brain.
+8. Sign in, then Pull brain.
 
 Localhost from your Mac can preview the iPhone UI, but a real iPhone PWA install needs HTTPS.
 
-For cabled iPhone testing on a Mac:
+For Safari inspection:
 
 1. Connect the iPhone 15 Pro Max and trust the Mac on the phone.
 2. Enable Web Inspector on the iPhone.
 3. Enable Safari's Develop menu on the Mac.
 4. Open the PWA in Safari on the iPhone.
 5. Inspect it from Safari on the Mac.
-
-For native cabled install/debug:
-
-1. Install full Xcode from the App Store.
-2. Run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
-3. Create/sign the Xcode project and run it on the trusted iPhone.
-
-This repo has a SwiftUI source scaffold under `platforms/ios`, but it does not yet include a generated Xcode project or signed `.ipa`.
 
 ## 4. MacBook
 
@@ -104,6 +145,15 @@ brew install cliclick
 ```
 
 Then grant Terminal or your runner Accessibility and Screen Recording permissions in macOS Settings.
+
+Close and reopen the Mac launcher quickly:
+
+```bash
+pkill -x SlyOS
+open /Users/emilshirokikh/Downloads/BADSCIENTIST/platforms/macos/build/SlyOS.app
+```
+
+You can also focus the SlyOS window and press `Cmd+Q`.
 
 ## 5. Linux PC
 
@@ -165,10 +215,11 @@ Download:
 
 - `slyos-web-pwa-*.zip`
 - `slyos-desktop-agent-*.zip`
+- `slyos-macos-app-*.zip`
 
 ## 8. Current Limits
 
-- iOS full-device click-through is blocked by Apple sandboxing; use PWA/App Intents/Shortcuts/handoff.
-- Native signed `.ipa`, `.dmg`, Linux packages, and Windows installers are not finished yet.
-- Supabase must be created by you because the repo cannot safely ship project credentials.
+- iOS full-device click-through is blocked by Apple sandboxing; use native in-app flows, App Intents/Shortcuts/handoff, camera/imports, and explicit share sheets.
+- Public `.ipa`, `.dmg`, Linux packages, and Windows installers are not finished yet.
+- The default Supabase URL/key is publishable and safe to ship, but the service-role key must never be committed.
 - Desktop takeover requires explicit local opt-in with `SLYOS_ENABLE_DEVICE_CONTROL=1`.

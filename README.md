@@ -23,6 +23,7 @@ What works today:
 - An editable generated Apple Xcode project with iOS and macOS targets.
 - Generated SlyOS app icons for iPhone, iPad, macOS, and the PWA manifest.
 - Installable PWA metadata, offline shell caching, and a web release artifact builder.
+- A real canvas-backed Brain graph built from local/synced memory, with drag rotate, wheel/pinch zoom, filters, recent memory questions, and node selection.
 - A localhost desktop device-agent bridge for macOS, Linux, and Windows actions.
 - Prompt-to-device control primitives: observe screen, front app, clipboard, click, type, hotkey, scroll, and wait.
 - Shared TypeScript agent contracts for memory, planning, actions, and sync.
@@ -33,13 +34,12 @@ What works today:
 
 What does not exist yet:
 
-- TestFlight/App Store iOS distribution.
+- Public App Store/TestFlight iOS distribution. Cable install works with full Xcode, signing, and an available trusted iPhone.
 - Notarized macOS DMG/PKG installer.
 - Finished Linux or Windows native installers.
 - Full Android-level notification listener, launcher, overlay, or accessibility behavior on other OSes.
-- A pre-provisioned cloud database for every clone of this repo.
 
-Important: `localhost` shows a browser-based iPhone-shaped preview. It is not the native iPhone app. The native iOS work lives under `platforms/ios`.
+Important: `localhost` is the web shell. The native Apple app wraps the same shell through WebKit and lives under `platforms/apple/SlyOSNative`.
 
 ## Quick start
 
@@ -123,7 +123,7 @@ npm run apple:xcode
 open platforms/apple/SlyOSNative/SlyOSNative.xcodeproj
 ```
 
-To install on a cabled iPhone:
+To install on a cabled iPhone from Xcode:
 
 1. Install full Xcode from Apple.
 2. Open `platforms/apple/SlyOSNative/SlyOSNative.xcodeproj`.
@@ -132,7 +132,33 @@ To install on a cabled iPhone:
 5. Select your connected iPhone.
 6. Press Run.
 
-Command Line Tools alone can generate and edit this project, but cannot deploy to an iPhone.
+To build from the command line:
+
+```bash
+xcodebuild \
+  -project platforms/apple/SlyOSNative/SlyOSNative.xcodeproj \
+  -scheme SlyOS-iOS \
+  -configuration Debug \
+  -destination 'generic/platform=iOS' \
+  DEVELOPMENT_TEAM=YOUR_TEAM_ID \
+  CODE_SIGN_STYLE=Automatic \
+  build
+```
+
+To push to a connected iPhone, the device must be unlocked, trusted, Developer Mode enabled, and visible as available in:
+
+```bash
+xcrun devicectl list devices
+```
+
+Then install and launch the built app:
+
+```bash
+xcrun devicectl device install app --device YOUR_COREDEVICE_ID \
+  ~/Library/Developer/Xcode/DerivedData/SlyOSNative-*/Build/Products/Debug-iphoneos/SlyOS.app
+
+xcrun devicectl device process launch --device YOUR_COREDEVICE_ID com.belto.slyos.ios
+```
 
 Regenerate app icons:
 
@@ -248,7 +274,13 @@ Moving Android right now would risk breaking Gradle paths, release scripts, webs
 
 ## Database status
 
-The database is prepared in code, not already provisioned in the cloud.
+The app ships with a default Supabase project URL and publishable key for the current SlyOS test sync target:
+
+```text
+https://xfftheaprdedypqlcvzg.supabase.co
+```
+
+The publishable key is public by design. User data is protected by Supabase Auth and Row Level Security, so each user must create/sign into an account before pushing or pulling memory. For your own deployment, replace the URL/key with your own Supabase project in `.env` or in the Setup screen.
 
 Already in this repo:
 
@@ -265,7 +297,7 @@ Already in this repo:
 - `npm run db:check` checks local DB readiness without printing secrets.
 - `npm run db:apply` applies the schema when `SUPABASE_DB_URL` is set.
 
-Still required for every real deployment:
+Still required for self-hosted deployments:
 
 1. Create a Supabase project.
 2. Run `supabase/schema.sql` in the Supabase SQL editor.
@@ -310,7 +342,7 @@ The web shell is meant to feel like SlyOS, not like a SaaS dashboard. Current ma
 - Now catch-up digest and waiting notification
 - Sent for you outbound log
 - Reconnect quiet contacts flow
-- Brain memory graph
+- Brain memory graph with real canvas depth, rotation, filters, search, and selected-node details
 - Memory settings cards
 - Mission picker
 - My network search
@@ -331,7 +363,8 @@ Desktop operation path:
 
 The shell is intentionally responsive:
 
-- Desktop: centered phone preview
+- Desktop browser: centered phone preview
+- Native macOS: full-window OS-style app
 - Phone/tablet: full-screen OS-style app
 - Short screens: compressed card spacing and graph height
 - Narrow screens: wrapped memory search and smaller text controls

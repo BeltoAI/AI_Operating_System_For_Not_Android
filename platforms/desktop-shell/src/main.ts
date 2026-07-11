@@ -14,6 +14,15 @@ import {
   validateProviderKey,
   type ProviderId
 } from "./providers";
+import {
+  buildBrainGraph,
+  findBrainNode,
+  type BrainNodeType,
+  type BrainNode,
+  type BrainCanvasOptions,
+  typeColor,
+  wireBrainCanvas
+} from "./brainGraph";
 import "./styles.css";
 
 const nativePlatform = new URLSearchParams(window.location.search).get("native");
@@ -60,13 +69,17 @@ const memoryStore = createBrowserMemoryStore(window.localStorage, "slyos");
 const queriedRoot = document.querySelector<HTMLDivElement>("#app");
 if (!queriedRoot) throw new Error("Missing #app root.");
 const appRoot: HTMLDivElement = queriedRoot;
-const envSupabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? "";
-const envSupabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "";
+const defaultSupabaseUrl = "https://xfftheaprdedypqlcvzg.supabase.co";
+const defaultSupabasePublishableKey = "sb_publishable_AxUM6xdI_3L-no-9MbNsxQ__u_eLmsQ";
+const envSupabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? defaultSupabaseUrl;
+const envSupabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? defaultSupabasePublishableKey;
 
 let screen: ShellScreen = "boot";
 let promptText = "";
 let memoryQuery = "";
 let memoryAnswer = "";
+let memoryFilter: BrainNodeType | null = null;
+let selectedBrainKey: string | null = null;
 let lastPlan: AgentPlan | null = null;
 let syncClient: BrainSyncClient | null = null;
 let syncStatus = "not connected";
@@ -92,6 +105,7 @@ let providerApiKey = window.localStorage.getItem(providerKeyStorageKey(selectedP
 let providerStatus = providerApiKey ? `${providerLabel(selectedProvider)} key saved on this device.` : "model key missing";
 let agentAnswer = "";
 let agentBusy = false;
+const memorySearchHistoryKey = "slyos:memorySearchHistory";
 
 if (supabaseUrl && supabasePublishableKey) {
   syncClient = createBrainSyncClient({ url: supabaseUrl, publishableKey: supabasePublishableKey });
@@ -168,6 +182,24 @@ function providerLabel(provider: ProviderId = selectedProvider): string {
 
 function localMemories(): MemoryItem[] {
   return memoryStore.list().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+function memorySearchHistory(): string[] {
+  const raw = window.localStorage.getItem(memorySearchHistoryKey);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string").slice(0, 6) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberMemorySearch(query: string): void {
+  const trimmed = query.trim();
+  if (!trimmed) return;
+  const next = [trimmed, ...memorySearchHistory().filter((item) => item.toLowerCase() !== trimmed.toLowerCase())].slice(0, 6);
+  window.localStorage.setItem(memorySearchHistoryKey, JSON.stringify(next));
 }
 
 function agentResponses(): MemoryItem[] {
@@ -520,7 +552,17 @@ function blockerHelp(blocker: string): string {
 function renderMemory(): string {
   const memories = localMemories();
   const shown = memoryQuery ? memoryStore.search(memoryQuery) : memories;
-  const recent = memories.slice(0, 4);
+  const graph = buildBrainGraph(shown);
+  const selected = findBrainNode(graph, selectedBrainKey);
+  const recentQueries = memorySearchHistory();
+  const filters: Array<{ label: string; short: string; type: BrainNodeType }> = [
+    { label: "Person", short: "Person", type: "person" },
+    { label: "Fact", short: "Fact", type: "idea" },
+    { label: "Task", short: "Task", type: "task" },
+    { label: "Paper", short: "Paper", type: "paper" },
+    { label: "Recall", short: "Recall", type: "recall" },
+    { label: "Network", short: "Netw", type: "network" }
+  ];
   return `
     <div class="panel-screen memory-screen">
       ${screenHeader("Memory")}
@@ -531,24 +573,32 @@ function renderMemory(): string {
         <button class="text-button" type="button" data-screen="memory-settings">⚙ Settings</button>
       </form>
       ${memoryAnswer ? `<section class="memory-answer"><span>✦</span><p>${escapeHtml(memoryAnswer)}</p></section>` : ""}
-      <form id="remember-form" class="remember-form">
-        <input id="remember-title" placeholder="Memory title" />
-        <input id="remember-body" placeholder="Something SlyOS should remember" />
-        <button type="submit">Remember</button>
-      </form>
       <div class="recent-row">
         <span>Recent</span>
-        <button type="button">Clear</button>
+        <button type="button" data-clear-memory-searches="true">Clear</button>
       </div>
       <div class="recent-list">
-        ${recent.length ? recent.map((item) => `<button type="button">↻ ${escapeHtml(item.title)}</button>`).join("") : `<p class="empty-state small">No memory yet.</p>`}
+        ${
+          recentQueries.length
+            ? recentQueries.map((query) => `<button type="button" data-memory-search="${escapeAttr(query)}">↻ ${escapeHtml(query)}</button>`).join("")
+            : `<p class="empty-state small">No recent memory questions yet.</p>`
+        }
       </div>
       <div class="memory-legend">
-        ${["Person", "Fact", "Task", "Paper", "Recall", "Netw"].map((label, index) => `<span><i class="legend-${index}"></i>${label}</span>`).join("")}
+        ${filters
+          .map(
+            (filter) => `
+              <button class="${memoryFilter === filter.type ? "active" : ""}" type="button" data-memory-filter="${filter.type}" aria-label="${escapeAttr(filter.label)}">
+                <i style="background:${typeColor(filter.type)}"></i>${escapeHtml(filter.short)}
+              </button>`
+          )
+          .join("")}
       </div>
       <div class="memory-map" aria-label="Memory graph preview">
-        ${renderMemoryGraph(shown, "SlyOS")}
+        ${renderBrainCanvas("memory")}
+        ${!shown.length ? `<p>No memory nodes yet.</p>` : ""}
       </div>
+      ${selected && selected.type !== "hub" ? renderBrainSelection(selected) : ""}
       <div class="divider"></div>
       <div class="settings-list compact">
         ${renderSettingsCard({ title: "Mission", subtitle: "Set a goal - SlyOS will plan and pursue it", screen: "mission" })}
@@ -558,45 +608,20 @@ function renderMemory(): string {
   `;
 }
 
-function renderMemoryGraph(items: MemoryItem[], centerLabel = ""): string {
-  if (!items.length) {
-    return `<p>No memory nodes yet.</p>`;
-  }
-  const nodes = items.map((item, index) => {
-    const hash = hashString(`${item.id}:${item.title}:${item.kind}`);
-    const angle = hash % 360;
-    const ring = 8 + (hash % 38);
-    const x = 50 + Math.cos((angle * Math.PI) / 180) * ring;
-    const y = 50 + Math.sin((angle * Math.PI) / 180) * ring * 0.86;
-    const size = 4 + Math.min(9, Math.max(0, item.body.length / 120));
-    const color = graphClassFor(item, index);
-    return `<span class="graph-node ${color}" title="${escapeAttr(item.title)}" style="left:${x.toFixed(2)}%;top:${y.toFixed(2)}%;width:${size.toFixed(1)}px;height:${size.toFixed(1)}px"></span>`;
-  }).join("");
-  const spokes = items.slice(0, 40).map((item, index) => {
-    const hash = hashString(`${item.id}:${item.source}`);
-    const angle = hash % 360;
-    const length = 16 + (hash % 42);
-    const top = 48 + ((index * 7) % 10) - 5;
-    return `<span class="graph-line" style="top:${top}%;left:50%;width:${length}%;transform:rotate(${angle}deg)"></span>`;
-  }).join("");
-  return `${spokes}${nodes}<span class="graph-core">${escapeHtml(centerLabel)}</span>`;
+function renderBrainCanvas(mode: "memory" | "voice"): string {
+  return `<canvas class="brain-canvas ${mode === "voice" ? "voice-canvas" : ""}" data-brain-canvas="${mode}" aria-label="SlyOS 3D brain"></canvas>`;
 }
 
-function graphClassFor(item: MemoryItem, index: number): string {
-  if (item.tags.includes("person") || item.kind === "profile") return "person";
-  if (item.tags.includes("task")) return "task";
-  if (item.tags.includes("agent-response")) return "recall";
-  if (item.tags.includes("network")) return "network";
-  if (item.tags.includes("paper")) return "paper";
-  return ["fact", "paper", "network"][index % 3] ?? "fact";
-}
-
-function hashString(value: string): number {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
-  }
-  return hash;
+function renderBrainSelection(node: BrainNode): string {
+  return `
+    <section class="brain-selection">
+      <div>
+        <span>${escapeHtml(node.type)} · ${escapeHtml(node.source)}</span>
+        <strong>${escapeHtml(node.label)}</strong>
+      </div>
+      <p>${escapeHtml(node.content)}</p>
+    </section>
+  `;
 }
 
 function renderMemorySettings(): string {
@@ -797,8 +822,8 @@ function renderSetup(): string {
         <div class="caption-line">${escapeHtml(providerStatus)}</div>
       </section>
       <section class="setup-block">
-        <h3>Sync account</h3>
-        <p>Supabase sync stores memory and settings across Mac, iPhone, Linux, and Windows builds.</p>
+        <h3>Account & cross-device brain</h3>
+        <p>Log in here. Use the same email/password on every device, then Pull brain on a new device and Push brain after local changes.</p>
         <div class="sync-grid">
           <input id="supabase-url" value="${escapeAttr(supabaseUrl)}" placeholder="https://project-ref.supabase.co" />
           <input id="supabase-key" value="${escapeAttr(supabasePublishableKey)}" placeholder="publishable key" />
@@ -806,11 +831,11 @@ function renderSetup(): string {
           <input id="supabase-password" type="password" placeholder="account password" />
         </div>
         <div class="button-pair">
-          <button id="sync-configure" type="button">Configure</button>
-          <button id="sync-signup" type="button">Sign up</button>
+          <button id="sync-configure" type="button">Use Supabase</button>
+          <button id="sync-signup" type="button">Create account</button>
           <button id="sync-login" type="button">Sign in</button>
-          <button id="sync-push" type="button">Push brain</button>
           <button id="sync-pull" type="button">Pull brain</button>
+          <button id="sync-push" type="button">Push brain</button>
         </div>
         <div class="caption-line">${escapeHtml(syncStatus)}</div>
       </section>
@@ -829,6 +854,15 @@ function renderSetup(): string {
         <div class="caption-line">${escapeHtml(deviceBridgeStatus)}</div>
       </section>
       <section class="setup-block">
+        <h3>Permissions for maximum control</h3>
+        <div class="permission-grid">
+          ${renderPermissionCard("macOS", ["Accessibility", "Screen Recording", "Automation prompts", "Microphone/Camera for voice + look"])}
+          ${renderPermissionCard("iPhone", ["Developer Mode + trusted developer", "Camera/Microphone when prompted", "Photos/Files for imports", "Notifications when native alerts are enabled"])}
+          ${renderPermissionCard("Linux", ["Screen capture portal", "xdotool/ydotool or desktop automation", "Microphone/Camera when prompted"])}
+          ${renderPermissionCard("Windows", ["PowerShell local agent", "UI Automation/screen capture", "Defender trust for unsigned builds"])}
+        </div>
+      </section>
+      <section class="setup-block">
         <h3>Bring in your data</h3>
         <p>Add a manual memory now; importers can feed the same brain store.</p>
         <form id="setup-remember-form" class="remember-form">
@@ -839,6 +873,15 @@ function renderSetup(): string {
       </section>
       <button id="setup-complete" class="primary-wide orange" type="button">${setupComplete ? "Back to SlyOS" : "Complete setup"}</button>
     </div>
+  `;
+}
+
+function renderPermissionCard(title: string, items: string[]): string {
+  return `
+    <article class="permission-card">
+      <strong>${escapeHtml(title)}</strong>
+      ${items.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
+    </article>
   `;
 }
 
@@ -876,7 +919,7 @@ function renderVoice(): string {
   return `
     <div class="voice-screen">
       <button class="voice-end" type="button" data-screen="home"><span>●</span>End</button>
-      <div class="voice-graph" aria-hidden="true">${renderMemoryGraph(localMemories(), "")}</div>
+      <div class="voice-graph" aria-hidden="true">${renderBrainCanvas("voice")}</div>
       <div class="listening">listening...</div>
     </div>
   `;
@@ -885,19 +928,19 @@ function renderVoice(): string {
 function renderBottomNav(): string {
   const blockerCount = setupBlockers().length;
   const nowItem = blockerCount
-    ? { id: "now" as ShellScreen, label: "Now", icon: "⚡", badge: blockerCount }
-    : { id: "now" as ShellScreen, label: "Now", icon: "⚡" };
+    ? { id: "now" as ShellScreen, label: "Now", icon: "now", badge: blockerCount }
+    : { id: "now" as ShellScreen, label: "Now", icon: "now" };
   const items: Array<{ id: ShellScreen; label: string; icon: string; badge?: number }> = [
-    { id: "home", label: "Home", icon: "⌂" },
+    { id: "home", label: "Home", icon: "home" },
     nowItem,
-    { id: "research", label: "Research", icon: "⚗" },
-    { id: "apps", label: "Apps", icon: "▦" }
+    { id: "research", label: "Research", icon: "research" },
+    { id: "apps", label: "Apps", icon: "apps" }
   ];
   return `
     <nav class="bottom-nav" aria-label="SlyOS bottom navigation">
       ${items.slice(0, 2).map(renderNavItem).join("")}
       <button class="brain-tab ${["memory", "memory-settings", "mission", "network"].includes(screen) ? "active" : ""}" data-screen="memory">
-        <span>▣</span>
+        <span class="nav-icon icon-brain"></span>
         <small>Brain</small>
       </button>
       ${items.slice(2).map(renderNavItem).join("")}
@@ -912,7 +955,7 @@ function renderNavItem(item: { id: ShellScreen; label: string; icon: string; bad
     (item.id === "research" && screen === "cowork");
   return `
     <button class="nav-tab ${active ? "active" : ""}" data-screen="${item.id}">
-      <span>${item.icon}${item.badge ? `<b>${item.badge}</b>` : ""}</span>
+      <span class="nav-icon icon-${item.icon}">${item.badge ? `<b>${item.badge}</b>` : ""}</span>
       <small>${item.label}</small>
     </button>
   `;
@@ -936,6 +979,8 @@ function shouldShowNav(current: ShellScreen): boolean {
 }
 
 function wireEvents(): void {
+  wireBrainCanvases();
+
   document.querySelectorAll<HTMLElement>("[data-screen]").forEach((element) => {
     element.addEventListener("click", () => {
       const next = element.dataset.screen as ShellScreen | undefined;
@@ -960,22 +1005,28 @@ function wireEvents(): void {
 
   document.querySelector("#memory-search-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    const input = document.querySelector<HTMLInputElement>("#memory-query");
-    memoryQuery = input?.value ?? "";
-    const hits = memoryStore.search(memoryQuery).slice(0, 3);
-    memoryAnswer = hits.length
-      ? hits.map((item) => `${item.title}: ${item.body}`).join(" ")
-      : "I don't have anything on that yet.";
+    void runMemorySearch();
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-memory-search]").forEach((element) => {
+    element.addEventListener("click", () => {
+      memoryQuery = element.dataset.memorySearch ?? "";
+      void runMemorySearch(memoryQuery);
+    });
+  });
+
+  document.querySelector("[data-clear-memory-searches]")?.addEventListener("click", () => {
+    window.localStorage.removeItem(memorySearchHistoryKey);
     render();
   });
 
-  document.querySelector("#remember-form")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const title = document.querySelector<HTMLInputElement>("#remember-title")?.value.trim() || "Remembered";
-    const body = document.querySelector<HTMLInputElement>("#remember-body")?.value.trim();
-    if (!body) return;
-    memoryStore.add({ kind: "fact", title, body, tags: ["manual"], source: "memory" });
-    render();
+  document.querySelectorAll<HTMLElement>("[data-memory-filter]").forEach((element) => {
+    element.addEventListener("click", () => {
+      const type = element.dataset.memoryFilter as BrainNodeType | undefined;
+      memoryFilter = memoryFilter === type ? null : type ?? null;
+      selectedBrainKey = null;
+      render();
+    });
   });
 
   document.querySelector("#setup-remember-form")?.addEventListener("submit", (event) => {
@@ -1114,6 +1165,75 @@ function wireEvents(): void {
   document.querySelector("#device-observe")?.addEventListener("click", () => {
     void observeDeviceFromPrompt();
   });
+}
+
+function wireBrainCanvases(): void {
+  document.querySelectorAll<HTMLCanvasElement>("[data-brain-canvas]").forEach((canvas) => {
+    const mode = canvas.dataset.brainCanvas === "voice" ? "voice" : "memory";
+    const items = mode === "memory" && memoryQuery ? memoryStore.search(memoryQuery) : localMemories();
+    const graph = buildBrainGraph(items);
+    const options: BrainCanvasOptions = {
+      mode,
+      selectedKey: mode === "memory" ? selectedBrainKey : null,
+      filterType: mode === "memory" ? memoryFilter : null,
+      query: mode === "memory" ? memoryQuery : ""
+    };
+    if (mode === "memory") {
+      wireBrainCanvas(canvas, graph, {
+        ...options,
+        onSelect: (key) => {
+          selectedBrainKey = key;
+          render();
+        }
+      });
+      return;
+    }
+    wireBrainCanvas(canvas, graph, options);
+  });
+}
+
+async function runMemorySearch(seed?: string): Promise<void> {
+  const input = document.querySelector<HTMLInputElement>("#memory-query");
+  memoryQuery = (seed ?? input?.value ?? "").trim();
+  selectedBrainKey = null;
+  if (!memoryQuery) {
+    memoryAnswer = "";
+    render();
+    return;
+  }
+
+  rememberMemorySearch(memoryQuery);
+  const hits = memoryStore.search(memoryQuery).slice(0, 8);
+  const localAnswer = hits.length
+    ? hits
+        .slice(0, 3)
+        .map((item) => `${item.title}: ${item.body}`)
+        .join(" ")
+    : "I don't have anything on that yet.";
+
+  if (!providerApiKey.trim()) {
+    memoryAnswer = localAnswer;
+    render();
+    return;
+  }
+
+  memoryAnswer = "Asking your brain...";
+  render();
+  try {
+    const answer = await generateWithProvider({
+      provider: selectedProvider,
+      apiKey: providerApiKey,
+      model: modelName,
+      prompt: `Answer this memory question using the supplied SlyOS brain context. If the context is insufficient, say what is missing.\n\nQuestion: ${memoryQuery}`,
+      memoryContext: hits.length
+        ? hits.map((item) => `${item.kind}: ${item.title}\n${item.body}`).join("\n\n")
+        : buildMemoryContext()
+    });
+    memoryAnswer = answer;
+  } catch (error) {
+    memoryAnswer = error instanceof Error ? error.message : String(error);
+  }
+  render();
 }
 
 async function syncAction(run: () => Promise<void>): Promise<void> {

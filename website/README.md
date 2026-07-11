@@ -1,6 +1,6 @@
 # Website
 
-Future cross-platform website/docs live here.
+Cross-platform website copy and release-link guidance live here.
 
 The existing Android website remains in:
 
@@ -8,11 +8,22 @@ The existing Android website remains in:
 /Users/emilshirokikh/Downloads/MADSCIENTIST/agentos/docs
 ```
 
-This folder should eventually contain:
+Ready-to-paste cross-platform download copy is in:
 
-- platform download pages
-- install instructions
-- release notes
-- parity status
-- privacy and permissions explanations per OS
+```text
+docs/WEBSITE_DOWNLOAD_COPY.md
+```
 
+The release assets should be uploaded to GitHub with stable aliases:
+
+```text
+slyos-web-pwa.zip
+slyos-desktop-agent.zip
+slyos-macos-app.zip
+```
+
+Those stable names make the website links work through:
+
+```text
+https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/latest/download/<asset-name>
+```
