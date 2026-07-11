@@ -94,6 +94,8 @@ interface VaultRecord {
   updatedAt: string;
 }
 
+type DevicePrimitive = { type: string; [key: string]: unknown };
+
 const memoryStore = createBrowserMemoryStore(window.localStorage, "slyos");
 const queriedRoot = document.querySelector<HTMLDivElement>("#app");
 if (!queriedRoot) throw new Error("Missing #app root.");
@@ -625,8 +627,7 @@ function renderHome(): string {
         <div class="ring">●</div>
         <div>tap to talk</div>
       </button>
-      ${agentAnswer ? `<section class="agent-answer"><span>${escapeHtml(providerLabel())}</span><p>${escapeHtml(agentAnswer)}</p></section>` : ""}
-      ${lastPlan ? renderBrainCard(lastPlan) : ""}
+      ${agentAnswer ? `<section class="agent-answer"><span>SlyOS</span><p>${escapeHtml(agentAnswer)}</p></section>` : ""}
     </div>
   `;
 }
@@ -1935,38 +1936,69 @@ async function runOperatePrimitive(): Promise<void> {
 
   await deviceAction(async () => {
     const primitive = primitiveActionForPrompt(operatePrompt);
-    const before = await deviceFetch("/actions", {
-      method: "POST",
-      body: JSON.stringify({ type: "observe_screen" })
-    });
-    const result = await deviceFetch("/actions", {
-      method: "POST",
-      body: JSON.stringify(primitive)
-    });
-    await deviceFetch("/actions", {
-      method: "POST",
-      body: JSON.stringify({ type: "wait", ms: 500 })
-    }).catch(() => undefined);
-    const after = await deviceFetch("/actions", {
-      method: "POST",
-      body: JSON.stringify({ type: "observe_screen" })
-    });
-    operateStatus = `ran ${String(primitive.type)}`;
-    deviceBridgeObservation = `${describeDevicePayload(before)} -> ${describeDevicePayload(result)} -> ${describeDevicePayload(after)}`;
-    memoryStore.add({
-      kind: "screen",
-      title: `Ran primitive: ${String(primitive.type)}`,
-      body: `${operatePrompt}\n${deviceBridgeObservation}`,
-      tags: ["operate", "screen", "brain"],
-      source: platformLabel()
-    });
+    await executeDevicePrimitive(operatePrompt, primitive, "operate");
+    operateStatus = `ran ${primitive.type}`;
   });
 }
 
-function primitiveActionForPrompt(prompt: string): Record<string, unknown> {
+async function executeDevicePrimitive(prompt: string, primitive: DevicePrimitive, source: "home" | "operate"): Promise<string> {
+  saveDeviceBridgeSettings();
+  const trace: string[] = [];
+  const observeBefore = primitive.type !== "open_url" && primitive.type !== "open_app";
+
+  if (observeBefore) {
+    const before = await optionalDeviceObserve();
+    if (before) trace.push(describeDevicePayload(before));
+  }
+
+  const result = await deviceFetch("/actions", {
+    method: "POST",
+    body: JSON.stringify(primitive)
+  });
+  trace.push(describeDevicePayload(result));
+
+  await deviceFetch("/actions", {
+    method: "POST",
+    body: JSON.stringify({ type: "wait", ms: primitive.type === "open_url" || primitive.type === "open_app" ? 900 : 450 })
+  }).catch(() => undefined);
+
+  const after = await optionalDeviceObserve();
+  if (after) trace.push(describeDevicePayload(after));
+
+  deviceBridgeObservation = trace.filter(Boolean).join(" -> ");
+  deviceBridgeStatus = `ran ${primitive.type}`;
+  memoryStore.add({
+    kind: "screen",
+    title: `Ran ${primitive.type}: ${prompt.slice(0, 54)}`,
+    body: `${prompt}\n${deviceBridgeObservation}`,
+    tags: [source, "operate", "screen", "brain"],
+    source: platformLabel()
+  });
+  return deviceBridgeObservation;
+}
+
+async function optionalDeviceObserve(): Promise<Record<string, any> | null> {
+  try {
+    return await deviceFetch("/actions", {
+      method: "POST",
+      body: JSON.stringify({ type: "observe_screen" })
+    });
+  } catch (error) {
+    return {
+      result: {
+        observationError: error instanceof Error ? error.message : String(error)
+      }
+    };
+  }
+}
+
+function primitiveActionForPrompt(prompt: string): DevicePrimitive {
   const lower = prompt.toLowerCase();
   const url = prompt.match(/https?:\/\/[^\s"'<>]+/i)?.[0];
   if (url) return { type: "open_url", url };
+
+  const webUrl = urlForPrompt(prompt);
+  if (webUrl) return { type: "open_url", url: webUrl };
 
   const coordinate = lower.match(/\b(?:click|tap)\D+(\d{2,4})\D+(\d{2,4})\b/);
   if (coordinate) {
@@ -1992,6 +2024,50 @@ function primitiveActionForPrompt(prompt: string): Record<string, unknown> {
   return { type: "observe_screen" };
 }
 
+function urlForPrompt(prompt: string): string | null {
+  const lower = prompt.toLowerCase().replace(/\s+/g, " ").trim();
+  const bareDomain = prompt.match(/\b(?:open|go to|visit|launch|show)\s+([a-z0-9-]+\.[a-z]{2,}(?:\/[^\s"'<>]*)?)/i)?.[1];
+  if (bareDomain) return `https://${bareDomain.replace(/^https?:\/\//i, "")}`;
+
+  const openGoogleSearch = prompt.match(/\b(?:open|go to|visit|launch|show)\s+google\s+(?:and\s+)?search(?:\s+for)?\s+(.+)/i)?.[1]?.trim();
+  if (openGoogleSearch) return `https://www.google.com/search?q=${encodeURIComponent(openGoogleSearch)}`;
+
+  const search = prompt.match(/\b(?:google|search(?: google)?(?: for)?)\s+(.+)/i)?.[1]?.trim();
+  if (search && !/^(google|search)$/i.test(search)) {
+    return `https://www.google.com/search?q=${encodeURIComponent(search)}`;
+  }
+
+  const aliases: Record<string, string> = {
+    google: "https://www.google.com",
+    gmail: "https://mail.google.com",
+    youtube: "https://www.youtube.com",
+    maps: "https://maps.google.com",
+    "google maps": "https://maps.google.com",
+    calendar: "https://calendar.google.com",
+    docs: "https://docs.google.com",
+    drive: "https://drive.google.com",
+    github: "https://github.com",
+    x: "https://x.com",
+    twitter: "https://x.com",
+    linkedin: "https://www.linkedin.com",
+    supabase: "https://supabase.com/dashboard",
+    chatgpt: "https://chatgpt.com"
+  };
+
+  for (const [name, url] of Object.entries(aliases).sort((a, b) => b[0].length - a[0].length)) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (new RegExp(`\\b(?:open|go to|visit|launch|show)\\s+${escaped}(?:$|[.,!?])`).test(lower)) return url;
+  }
+
+  return null;
+}
+
+function shouldAutoRunDeviceAction(prompt: string, primitive: DevicePrimitive): boolean {
+  if (nativePlatform === "ios") return false;
+  if (primitive.type !== "observe_screen") return true;
+  return /\b(observe|look|read|screen|frontmost|what.*open)\b/i.test(prompt);
+}
+
 function normalizeAppName(app: string): string {
   const key = app.toLowerCase().replace(/\s+/g, " ").trim();
   const names: Record<string, string> = {
@@ -2013,6 +2089,7 @@ function normalizeAppName(app: string): string {
 
 function describeDevicePayload(payload: Record<string, any>): string {
   const result = payload.result ?? payload;
+  if (result.observationError) return `observe blocked: ${String(result.observationError)}`;
   if (result.opened) return `opened ${String(result.opened)}`;
   if (result.typed) return `typed ${String(result.typed)} chars`;
   if (result.clicked) return `clicked ${JSON.stringify(result.clicked)}`;
@@ -2260,17 +2337,42 @@ async function runPrompt(): Promise<void> {
   const request = promptText.trim();
   if (!request || agentBusy) return;
 
-  lastPlan = planPrompt(request);
-  agentAnswer = providerApiKey.trim() ? "" : "Setup needs a model key before SlyOS can answer live.";
+  const plan = planPrompt(request);
+  const primitive = primitiveActionForPrompt(request);
+  lastPlan = null;
+  agentAnswer = "";
   memoryStore.add({
     kind: "message",
     title: `Prompt: ${request.slice(0, 64)}`,
-    body: `Brain planned ${lastPlan.actions.length} step${lastPlan.actions.length === 1 ? "" : "s"} for: ${request}`,
+    body: `Brain planned ${plan.actions.length} step${plan.actions.length === 1 ? "" : "s"} for: ${request}`,
     tags: ["prompt", "brain"],
     source: "home"
   });
   promptText = "";
 
+  if (shouldAutoRunDeviceAction(request, primitive)) {
+    agentBusy = true;
+    render();
+    try {
+      const result = await executeDevicePrimitive(request, primitive, "home");
+      agentAnswer = `Done. ${result}`;
+      memoryStore.add({
+        kind: "message",
+        title: `SlyOS ran: ${request.slice(0, 56)}`,
+        body: agentAnswer,
+        tags: ["agent-response", "brain", "operate"],
+        source: "Mac"
+      });
+    } catch (error) {
+      agentAnswer = error instanceof Error ? error.message : String(error);
+    } finally {
+      agentBusy = false;
+      render();
+    }
+    return;
+  }
+
+  agentAnswer = providerApiKey.trim() ? "" : "Setup needs a model key before SlyOS can answer live.";
   if (!providerApiKey.trim()) {
     render();
     return;

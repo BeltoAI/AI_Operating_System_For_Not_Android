@@ -223,19 +223,20 @@ function render(
   const selected = options.selectedKey ? graph.nodes.find((node) => node.key === options.selectedKey) : null;
   const related = selected ? new Set(graph.edges.filter((edge) => edge.a === selected.id || edge.b === selected.id).flatMap((edge) => [edge.a, edge.b])) : null;
   const terms = (options.query ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 2);
+  const sparseMemoryGraph = options.mode === "memory" && graph.nodes.length < 8;
 
   for (const edge of graph.edges) {
     const a = projected[edge.a];
     const b = projected[edge.b];
     if (!a || !b) continue;
     const hot = selected ? edge.a === selected.id || edge.b === selected.id : false;
-    const alpha = hot ? 0.28 : selected || options.filterType ? 0.035 : dark ? 0.04 : 0.052;
+    const alpha = hot ? 0.28 : sparseMemoryGraph ? 0.022 : selected || options.filterType ? 0.035 : dark ? 0.04 : 0.052;
     ctx.strokeStyle = dark ? `rgba(232,100,44,${hot ? 0.26 : alpha})` : `rgba(26,23,20,${alpha})`;
     ctx.lineWidth = hot ? 1 : 0.55;
     line(ctx, a.x, a.y, b.x, b.y);
   }
 
-  const sparkCount = Math.min(12, graph.edges.length);
+  const sparkCount = sparseMemoryGraph ? 0 : Math.min(12, graph.edges.length);
   const edgeSeed = Math.floor(options.elapsed / (options.mode === "voice" ? 1150 : 1400));
   const flow = ((options.elapsed % (options.mode === "voice" ? 2200 : 1400)) / (options.mode === "voice" ? 2200 : 1400) + 1) % 1;
   for (let index = 0; index < sparkCount; index += 1) {
@@ -323,7 +324,9 @@ function projectAll(
   zoom: number,
   mode: "memory" | "voice"
 ): Array<{ x: number; y: number; depth: number } | undefined> {
-  const ext = percentile(graph.nodes.map((node) => Math.max(Math.abs(node.x), Math.abs(node.y))), mode === "voice" ? 0.84 : 0.72);
+  const rawExt = percentile(graph.nodes.map((node) => Math.max(Math.abs(node.x), Math.abs(node.y))), mode === "voice" ? 0.84 : 0.72);
+  const minExt = mode === "voice" ? 260 : graph.nodes.length < 12 ? 300 : 1;
+  const ext = Math.max(minExt, rawExt);
   const scale = ((Math.min(width, height) * (mode === "voice" ? 0.5 : 0.36)) / Math.max(1, ext)) * zoom;
   const cx = width / 2;
   const cy = height * (mode === "voice" ? 0.54 : 0.52);
