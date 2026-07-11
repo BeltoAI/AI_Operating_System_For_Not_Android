@@ -90,7 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         components.queryItems = [
             URLQueryItem(name: "native", value: "macos"),
-            URLQueryItem(name: "screen", value: "home")
+            URLQueryItem(name: "screen", value: "setup")
         ]
         return components.url ?? url
     }

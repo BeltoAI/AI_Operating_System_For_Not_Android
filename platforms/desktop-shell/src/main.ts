@@ -7,6 +7,13 @@ import {
   type BrainSyncClient,
   type MemoryItem
 } from "@badscientist/agent-core";
+import {
+  defaultModelFor,
+  generateWithProvider,
+  providerOptions,
+  validateProviderKey,
+  type ProviderId
+} from "./providers";
 import "./styles.css";
 
 const nativePlatform = new URLSearchParams(window.location.search).get("native");
@@ -36,25 +43,10 @@ type ShellScreen =
   | "look"
   | "voice";
 
-interface WaitingThread {
-  contact: string;
-  app: string;
-  why: string;
-  last: string;
-  draft: string;
-}
-
 interface Shortcut {
   label: string;
   kind: ShellScreen;
   glyph: string;
-}
-
-interface SentItem {
-  to: string;
-  platform: string;
-  time: string;
-  body: string;
 }
 
 interface SettingsCard {
@@ -84,9 +76,27 @@ let supabasePublishableKey =
 let supabaseEmail = window.localStorage.getItem("slyos:supabaseEmail") ?? "";
 let agentPaused = false;
 let deviceBridgeUrl = window.localStorage.getItem("slyos:deviceBridgeUrl") ?? "http://127.0.0.1:4317";
-let deviceBridgeToken = window.localStorage.getItem("slyos:deviceBridgeToken") ?? "";
+let deviceBridgeToken =
+  window.localStorage.getItem("slyos:deviceBridgeToken") ?? (nativePlatform === "macos" ? "slyos-local-dev" : "");
 let deviceBridgeStatus = "device bridge not checked";
 let deviceBridgeObservation = "";
+let setupComplete = window.localStorage.getItem("slyos:setupComplete") === "true";
+let profileName = window.localStorage.getItem("slyos:profileName") ?? "";
+let profileVoice = window.localStorage.getItem("slyos:profileVoice") ?? "";
+let selectedProvider = readProviderId(window.localStorage.getItem("slyos:modelProvider"));
+let modelName =
+  window.localStorage.getItem(providerModelStorageKey(selectedProvider)) ??
+  window.localStorage.getItem("slyos:modelName") ??
+  defaultModelFor(selectedProvider);
+let providerApiKey = window.localStorage.getItem(providerKeyStorageKey(selectedProvider)) ?? "";
+let providerStatus = providerApiKey ? `${providerLabel(selectedProvider)} key saved on this device.` : "model key missing";
+let agentAnswer = "";
+let agentBusy = false;
+
+if (supabaseUrl && supabasePublishableKey) {
+  syncClient = createBrainSyncClient({ url: supabaseUrl, publishableKey: supabasePublishableKey });
+  syncStatus = "Configured. Sign in to sync memory/settings.";
+}
 
 const routeScreens = new Set<ShellScreen>([
   "boot",
@@ -113,72 +123,15 @@ const initialScreen = new URLSearchParams(window.location.search).get("screen") 
 if (initialScreen && routeScreens.has(initialScreen)) {
   screen = initialScreen;
 }
-
-const waitingThreads: WaitingThread[] = [
-  {
-    contact: "Screenshot saved",
-    app: "Samsung capture",
-    why: "Tap here to see your screenshot.",
-    last: "Screenshot saved from Samsung.",
-    draft: "Open"
-  }
-];
+if (!setupComplete && !["boot", "setup"].includes(screen)) {
+  screen = "setup";
+}
 
 const shortcuts: Shortcut[] = [
   { label: "Look", kind: "look", glyph: "◉" },
   { label: "Docs", kind: "research", glyph: "✎" },
   { label: "Expenses", kind: "expenses", glyph: "$" },
   { label: "Setup", kind: "setup", glyph: "⚙" }
-];
-
-const sentItems: SentItem[] = [
-  {
-    to: "Elon Musk",
-    platform: "X",
-    time: "1m ago",
-    body: "the press release funnel adds three approval layers just to say less than one honest post from the CEO"
-  },
-  {
-    to: "Elon Musk reposted",
-    platform: "X",
-    time: "6m ago",
-    body: "19,600 hours and still got the seat five years ago instead of six decades ago. respect to anyone who just kept flying anyway"
-  },
-  {
-    to: "Elon Musk",
-    platform: "X",
-    time: "6m ago",
-    body: "symmetric 10Gbps anywhere basically kills the \"edge is too far from the datacenter\" excuse. latency's the only boss fight left"
-  },
-  {
-    to: "Elon Musk reposted",
-    platform: "X",
-    time: "10m ago",
-    body: "29% mean pass is the real story here, benchmarks are getting honest about how hard actual work is"
-  }
-];
-
-const settingsCards: SettingsCard[] = [
-  { title: "Character", subtitle: "How the agent should sound like you" },
-  { title: "Your details", subtitle: "Address, contact & booking link" },
-  { title: "API keys & model", subtitle: "Paste a key - SlyOS checks it's actually valid. Gemini is free.", screen: "setup" },
-  { title: "Efficiency", subtitle: "How much time SlyOS is saving you" },
-  { title: "On-device model", subtitle: "Free, private, offline - no key needed" },
-  { title: "Appearance" },
-  { title: "Investing" },
-  { title: "Banking link" },
-  { title: "Talk to your agent", screen: "voice" },
-  { title: "Your writing voice" },
-  { title: "Persona per platform" },
-  { title: "Your uploads", subtitle: "See exactly what's in your brain" },
-  { title: "Import & voice" },
-  { title: "Models & spending" },
-  { title: "Connections" },
-  { title: "Per-app responses" },
-  { title: "Document Q&A" },
-  { title: "Lock screen" },
-  { title: "Floating nav panel", subtitle: "A SlyOS bar over every app + read-this-screen" },
-  { title: "Brain backup", subtitle: "Backed up 2 hours ago", glyph: "🛡" }
 ];
 
 const missionChoices = [
@@ -189,13 +142,73 @@ const missionChoices = [
 
 setTimeout(() => {
   if (screen === "boot") {
-    screen = "lock";
+    screen = setupComplete ? "lock" : "setup";
     render();
   }
 }, 1600);
 
 render();
 registerServiceWorker();
+
+function readProviderId(value: string | null): ProviderId {
+  return providerOptions.some((option) => option.id === value) ? (value as ProviderId) : "gemini";
+}
+
+function providerKeyStorageKey(provider: ProviderId): string {
+  return `slyos:${provider}:apiKey`;
+}
+
+function providerModelStorageKey(provider: ProviderId): string {
+  return `slyos:${provider}:modelName`;
+}
+
+function providerLabel(provider: ProviderId = selectedProvider): string {
+  return providerOptions.find((option) => option.id === provider)?.label ?? "Model";
+}
+
+function localMemories(): MemoryItem[] {
+  return memoryStore.list().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+function agentResponses(): MemoryItem[] {
+  return localMemories().filter((item) => item.tags.includes("agent-response"));
+}
+
+function peopleMemories(): MemoryItem[] {
+  return localMemories().filter((item) => item.kind === "profile" || item.tags.includes("person"));
+}
+
+function setupBlockers(): string[] {
+  const blockers: string[] = [];
+  if (!setupComplete) blockers.push("Finish setup");
+  if (!providerApiKey.trim()) blockers.push("Add a model API key");
+  if (!syncClient) blockers.push("Configure Supabase sync");
+  if (!deviceBridgeStatus.startsWith("bridge online") && !deviceBridgeStatus.startsWith("device observed")) {
+    blockers.push("Check the Mac device bridge");
+  }
+  return blockers;
+}
+
+function buildMemoryContext(): string {
+  const profile = [
+    profileName ? `Name: ${profileName}` : "",
+    profileVoice ? `Voice/persona: ${profileVoice}` : ""
+  ].filter(Boolean);
+  const memories = localMemories()
+    .slice(0, 24)
+    .map((item) => `${item.kind}: ${item.title} - ${item.body}`);
+  return [...profile, ...memories].join("\n");
+}
+
+function navigate(next: ShellScreen): void {
+  if (next !== "manual") agentPaused = false;
+  screen = next;
+  const params = new URLSearchParams(window.location.search);
+  params.set("screen", screen);
+  if (nativePlatform) params.set("native", nativePlatform);
+  history.replaceState(null, "", `?${params.toString()}`);
+  render();
+}
 
 function render(): void {
   appRoot.innerHTML = `
@@ -265,18 +278,20 @@ function renderBoot(): string {
 }
 
 function renderLock(): string {
+  const blockers = setupBlockers();
+  const recent = localMemories().slice(0, 2).map((item) => item.title);
   const priorities = [
-    `Reply to Dana before the 2pm call`,
-    `Flight check-in opens in 40 min`,
-    lastPlan ? `${lastPlan.actions.length} brain step${lastPlan.actions.length === 1 ? "" : "s"} held from last prompt` : `Rent draft is ready to send`
-  ];
+    ...blockers,
+    ...(lastPlan ? [`${lastPlan.actions.length} brain step${lastPlan.actions.length === 1 ? "" : "s"} held from last prompt`] : []),
+    ...recent
+  ].slice(0, 3);
   return `
     <div class="lock-screen tap-screen" data-screen="home">
       <div class="lock-top">
-        <div class="time">9:41</div>
-        <div class="battery">82%</div>
+        <div class="time">${escapeHtml(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }))}</div>
+        <div class="battery">${setupComplete ? "ready" : "setup"}</div>
       </div>
-      <div class="matter">You have ${priorities.length} things that matter.</div>
+      <div class="matter">${priorities.length ? `You have ${priorities.length} thing${priorities.length === 1 ? "" : "s"} that matter.` : "SlyOS is quiet."}</div>
       <div class="priority-list">
         ${priorities.map((item) => `<div class="priority"><span class="dot"></span><span>${escapeHtml(item)}</span></div>`).join("")}
       </div>
@@ -289,23 +304,32 @@ function renderLock(): string {
 }
 
 function renderHome(): string {
+  const blockers = setupBlockers();
+  const statusLeft = new Date().toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
+  const statusRight = agentBusy ? "thinking" : blockers.length ? `${blockers.length} setup` : "ready";
   return `
     <div class="home-screen">
       <div class="home-status">
-        <span>Thu&nbsp;&nbsp;7:19 PM</span>
-        <span>100%</span>
+        <span>${escapeHtml(statusLeft)}</span>
+        <span>${escapeHtml(statusRight)}</span>
       </div>
       <div class="home-spacer" aria-hidden="true"></div>
       <div class="prompt-title">what should happen?</div>
+      ${
+        blockers.length
+          ? `<button class="setup-warning" type="button" data-screen="setup">${escapeHtml(blockers[0] ?? "Open setup")}</button>`
+          : ""
+      }
       <form id="prompt-form" class="ask-row">
         <input id="prompt-input" value="${escapeAttr(promptText)}" autocomplete="off" placeholder="ask me anything…" />
         <button class="camera-button" type="button" data-screen="look" aria-label="Look">◉</button>
-        <button class="send-button" type="submit">Send</button>
+        <button class="send-button" type="submit">${agentBusy ? "Run" : "Send"}</button>
       </form>
       <button class="talk-target home-talk" type="button" data-screen="voice">
         <div class="ring">●</div>
         <div>tap to talk</div>
       </button>
+      ${agentAnswer ? `<section class="agent-answer"><span>${escapeHtml(providerLabel())}</span><p>${escapeHtml(agentAnswer)}</p></section>` : ""}
       ${lastPlan ? renderBrainCard(lastPlan) : ""}
     </div>
   `;
@@ -357,60 +381,67 @@ function renderAction(action: AgentAction): string {
 }
 
 function renderNow(): string {
+  const blockers = setupBlockers();
+  const memoryCount = localMemories().length;
+  const summary = blockers.length
+    ? `SlyOS needs ${blockers.length} setup item${blockers.length === 1 ? "" : "s"} before it can operate cleanly.`
+    : `SlyOS is online with ${memoryCount} local memor${memoryCount === 1 ? "y" : "ies"} and ${agentResponses().length} agent output${agentResponses().length === 1 ? "" : "s"}.`;
   return `
     <div class="panel-screen">
       ${screenHeader("Now")}
       <div class="mini-row">
-        <span>Thursday, Jul 9</span>
+        <span>${escapeHtml(new Date().toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" }))}</span>
         <button data-screen="outbox">Sent for you</button>
         <button data-screen="reconnect">Reconnect</button>
       </div>
       <section class="brief-card">
         <div class="brief-head">
-          <span>✨ What you missed</span>
-          <button>⟳</button>
+          <span>What you missed</span>
+          <button type="button" data-screen="setup">↻</button>
         </div>
-        <p>Hey Emil. Nothing urgent in your queue right now-just a screenshot saved from Samsung. Everything's quiet on the reply front.</p>
-        <strong>Text back: nobody right now.</strong>
+        <p>${escapeHtml(summary)}</p>
+        <strong>${escapeHtml(providerStatus)}</strong>
       </section>
-      <div class="section-label">Waiting on you · 1</div>
+      <div class="section-label">Waiting on you · ${blockers.length}</div>
       <div class="thread-list">
-        ${waitingThreads.map(renderThread).join("")}
+        ${blockers.length ? blockers.map(renderBlocker).join("") : `<p class="empty-state">No setup blockers right now.</p>`}
       </div>
     </div>
   `;
 }
 
 function renderOutbox(): string {
+  const sent = agentResponses();
   return `
     <div class="panel-screen outbox-screen">
       ${screenHeader("Sent for you", "now")}
-      <p class="screen-subtitle">Everything the agent did on your behalf - what, to whom, and why. Recall copies a retraction you can paste.</p>
+      <p class="screen-subtitle">Everything the agent produced on your behalf from your prompt, memory, and model key.</p>
       <div class="sent-list">
-        ${sentItems.map(renderSentItem).join("")}
+        ${sent.length ? sent.map(renderSentItem).join("") : `<p class="empty-state">No agent outputs yet. Run a prompt from Home.</p>`}
       </div>
     </div>
   `;
 }
 
-function renderSentItem(item: SentItem): string {
+function renderSentItem(item: MemoryItem): string {
   return `
     <article class="sent-card">
       <div class="sent-top">
         <div>
-          <h3>${escapeHtml(item.to)}</h3>
-          <span>${escapeHtml(item.platform)} · ${escapeHtml(item.time)}</span>
+          <h3>${escapeHtml(item.title)}</h3>
+          <span>${escapeHtml(item.source)} · ${escapeHtml(new Date(item.createdAt).toLocaleString())}</span>
         </div>
-        <b>sent</b>
+        <b>done</b>
       </div>
       <p>${escapeHtml(item.body)}</p>
-      <small>↳ auto-replied on your behalf (full) - drafted in your voice from your brain + persona</small>
-      <button type="button">Recall</button>
+      <small>↳ generated through your selected model using local brain context</small>
+      <button type="button" data-screen="home">Use again</button>
     </article>
   `;
 }
 
 function renderReconnect(): string {
+  const people = peopleMemories();
   return `
     <div class="panel-screen reconnect-screen">
       ${screenHeader("Reconnect", "now")}
@@ -418,64 +449,99 @@ function renderReconnect(): string {
         <button class="active" type="button">Quiet contacts</button>
         <button type="button">My network</button>
       </div>
-      <p class="screen-subtitle">People you haven't spoken with in over a week - message ready to send.</p>
-      <p class="empty-state large">Nobody you've chatted with has gone quiet. ✨</p>
+      <p class="screen-subtitle">${people.length} people in your local brain.</p>
+      ${
+        people.length
+          ? `<div class="thread-list">${people.map(renderPersonMemory).join("")}</div>`
+          : `<p class="empty-state large">No people memories yet.</p>`
+      }
     </div>
   `;
 }
 
 function renderPeople(): string {
+  const people = peopleMemories();
   return `
     <div class="panel-screen">
       ${screenHeader("People")}
       <div class="thread-list people-list">
-        ${waitingThreads.map(renderThread).join("")}
+        ${people.length ? people.map(renderPersonMemory).join("") : `<p class="empty-state">No people memories yet.</p>`}
       </div>
     </div>
   `;
 }
 
-function renderThread(thread: WaitingThread): string {
+function renderBlocker(blocker: string): string {
   return `
     <article class="thread-card">
       <div class="avatar-wrap">
-        <div class="avatar">${escapeHtml(thread.contact[0] ?? "•")}</div>
-        <div class="app-badge">▣</div>
+        <div class="avatar">!</div>
+        <div class="app-badge">S</div>
       </div>
       <div class="thread-body">
         <div class="thread-top">
-          <strong>${escapeHtml(thread.contact)}</strong>
+          <strong>${escapeHtml(blocker)}</strong>
         </div>
-        <p><span>via ${escapeHtml(thread.app)}</span></p>
-        <blockquote>${escapeHtml(thread.why)}</blockquote>
+        <p><span>via Setup</span></p>
+        <blockquote>${escapeHtml(blockerHelp(blocker))}</blockquote>
         <div class="open-row">
-          <button type="button">${escapeHtml(thread.draft)} ↗</button>
+          <button type="button" data-screen="setup">Open ↗</button>
         </div>
       </div>
     </article>
   `;
 }
 
+function renderPersonMemory(item: MemoryItem): string {
+  return `
+    <article class="thread-card">
+      <div class="avatar-wrap">
+        <div class="avatar">${escapeHtml(item.title[0] ?? "P")}</div>
+        <div class="app-badge">M</div>
+      </div>
+      <div class="thread-body">
+        <div class="thread-top">
+          <strong>${escapeHtml(item.title)}</strong>
+        </div>
+        <p><span>${escapeHtml(item.source)}</span></p>
+        <blockquote>${escapeHtml(item.body)}</blockquote>
+      </div>
+    </article>
+  `;
+}
+
+function blockerHelp(blocker: string): string {
+  if (blocker.includes("setup")) return "Complete the setup wizard so the shell knows your model, account, and device bridge.";
+  if (blocker.includes("API")) return "Paste a Gemini, OpenAI, or Claude key so prompts produce live model output.";
+  if (blocker.includes("Supabase")) return "Connect the Supabase project to sync memory and settings across devices.";
+  return "Start the local Mac bridge and check it so SlyOS can observe and operate this computer.";
+}
+
 function renderMemory(): string {
-  const memories = memoryStore.list();
+  const memories = localMemories();
   const shown = memoryQuery ? memoryStore.search(memoryQuery) : memories;
+  const recent = memories.slice(0, 4);
   return `
     <div class="panel-screen memory-screen">
       ${screenHeader("Memory")}
-      <div class="caption-line">437 memories mapped · drag to rotate, pinch to zoom</div>
+      <div class="caption-line">${memories.length} memor${memories.length === 1 ? "y" : "ies"} mapped · drag to rotate, pinch to zoom</div>
       <form id="memory-search-form" class="memory-search">
         <input id="memory-query" value="${escapeAttr(memoryQuery)}" placeholder="Ask your memory…" />
         <button type="submit">Ask</button>
         <button class="text-button" type="button" data-screen="memory-settings">⚙ Settings</button>
       </form>
       ${memoryAnswer ? `<section class="memory-answer"><span>✦</span><p>${escapeHtml(memoryAnswer)}</p></section>` : ""}
+      <form id="remember-form" class="remember-form">
+        <input id="remember-title" placeholder="Memory title" />
+        <input id="remember-body" placeholder="Something SlyOS should remember" />
+        <button type="submit">Remember</button>
+      </form>
       <div class="recent-row">
         <span>Recent</span>
         <button type="button">Clear</button>
       </div>
       <div class="recent-list">
-        <button type="button">↻ whats my name?</button>
-        <button type="button">↻ who is daria</button>
+        ${recent.length ? recent.map((item) => `<button type="button">↻ ${escapeHtml(item.title)}</button>`).join("") : `<p class="empty-state small">No memory yet.</p>`}
       </div>
       <div class="memory-legend">
         ${["Person", "Fact", "Task", "Paper", "Recall", "Netw"].map((label, index) => `<span><i class="legend-${index}"></i>${label}</span>`).join("")}
@@ -493,32 +559,75 @@ function renderMemory(): string {
 }
 
 function renderMemoryGraph(items: MemoryItem[], centerLabel = ""): string {
-  const count = Math.max(80, Math.min(140, 88 + items.length * 4));
-  const nodes = Array.from({ length: count }, (_, index) => {
-    const angle = index * 137.508;
-    const ring = index % 17 === 0 ? 42 + ((index * 5) % 14) : 7 + ((index * 17) % 28);
+  if (!items.length) {
+    return `<p>No memory nodes yet.</p>`;
+  }
+  const nodes = items.map((item, index) => {
+    const hash = hashString(`${item.id}:${item.title}:${item.kind}`);
+    const angle = hash % 360;
+    const ring = 8 + (hash % 38);
     const x = 50 + Math.cos((angle * Math.PI) / 180) * ring;
     const y = 50 + Math.sin((angle * Math.PI) / 180) * ring * 0.86;
-    const size = 2 + ((index * 11) % 6);
-    const color = ["person", "fact", "task", "paper", "recall", "network"][index % 6];
-    return `<span class="graph-node ${color}" style="left:${x.toFixed(2)}%;top:${y.toFixed(2)}%;width:${size}px;height:${size}px"></span>`;
+    const size = 4 + Math.min(9, Math.max(0, item.body.length / 120));
+    const color = graphClassFor(item, index);
+    return `<span class="graph-node ${color}" title="${escapeAttr(item.title)}" style="left:${x.toFixed(2)}%;top:${y.toFixed(2)}%;width:${size.toFixed(1)}px;height:${size.toFixed(1)}px"></span>`;
   }).join("");
-  const spokes = Array.from({ length: 34 }, (_, index) => {
-    const angle = (index * 23) % 360;
-    const length = 32 + ((index * 19) % 46);
+  const spokes = items.slice(0, 40).map((item, index) => {
+    const hash = hashString(`${item.id}:${item.source}`);
+    const angle = hash % 360;
+    const length = 16 + (hash % 42);
     const top = 48 + ((index * 7) % 10) - 5;
     return `<span class="graph-line" style="top:${top}%;left:50%;width:${length}%;transform:rotate(${angle}deg)"></span>`;
   }).join("");
   return `${spokes}${nodes}<span class="graph-core">${escapeHtml(centerLabel)}</span>`;
 }
 
+function graphClassFor(item: MemoryItem, index: number): string {
+  if (item.tags.includes("person") || item.kind === "profile") return "person";
+  if (item.tags.includes("task")) return "task";
+  if (item.tags.includes("agent-response")) return "recall";
+  if (item.tags.includes("network")) return "network";
+  if (item.tags.includes("paper")) return "paper";
+  return ["fact", "paper", "network"][index % 3] ?? "fact";
+}
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
 function renderMemorySettings(): string {
+  const cards: SettingsCard[] = [
+    { title: "Character", subtitle: profileVoice || "How the agent should sound like you", screen: "setup" },
+    { title: "Your details", subtitle: profileName || "Name, contact, and profile context", screen: "setup" },
+    { title: "API keys & model", subtitle: providerStatus, screen: "setup" },
+    { title: "Efficiency", subtitle: `${agentResponses().length} agent output${agentResponses().length === 1 ? "" : "s"} stored` },
+    { title: "On-device model", subtitle: "Available per platform when native runtimes are installed", screen: "setup" },
+    { title: "Appearance" },
+    { title: "Investing" },
+    { title: "Banking link" },
+    { title: "Talk to your agent", screen: "voice" },
+    { title: "Your writing voice", ...(profileVoice ? { subtitle: profileVoice } : {}), screen: "setup" },
+    { title: "Persona per platform", screen: "setup" },
+    { title: "Your uploads", subtitle: `${localMemories().length} local brain item${localMemories().length === 1 ? "" : "s"}` },
+    { title: "Import & voice", screen: "setup" },
+    { title: "Models & spending", subtitle: `${providerLabel()} · ${modelName}`, screen: "setup" },
+    { title: "Connections", subtitle: syncStatus, screen: "setup" },
+    { title: "Per-app responses" },
+    { title: "Document Q&A" },
+    { title: "Lock screen" },
+    { title: "Floating nav panel", subtitle: deviceBridgeStatus, screen: "setup" },
+    { title: "Brain backup", subtitle: syncStatus, glyph: "shield", screen: "setup" }
+  ];
   return `
     <div class="panel-screen memory-settings-screen">
       ${screenHeader("Memory", "memory")}
       <div class="build-pill">✦ Settings build v21 · on-device test gate</div>
       <div class="settings-list">
-        ${settingsCards.map(renderSettingsCard).join("")}
+        ${cards.map(renderSettingsCard).join("")}
       </div>
       <p class="privacy-note">The agent reads this on every request. Nothing here leaves your phone except as part of a prompt you trigger.</p>
     </div>
@@ -563,37 +672,55 @@ function renderNetwork(): string {
 }
 
 function renderResearch(): string {
+  const papers = localMemories().filter((item) => item.tags.includes("paper"));
   return `
     <div class="panel-screen">
       ${screenHeader("Research")}
-      <p class="screen-subtitle">Opus · 6/6 left today (new paper + each suggestion)</p>
+      <p class="screen-subtitle">${papers.length} paper${papers.length === 1 ? "" : "s"} in local brain</p>
       <div class="research-actions">
-        <button class="primary-pill" type="button">+ New paper</button>
+        <button class="primary-pill" type="button" data-screen="home">+ New paper</button>
         <button class="secondary-pill" type="button" data-screen="cowork">⌘ Cowork</button>
       </div>
       <div class="search-card">🔍 <span>Search papers...</span></div>
-      <p class="empty-state">No papers yet. Tap New paper to write one.</p>
+      ${
+        papers.length
+          ? `<div class="tool-list">${papers.map((paper) => rowTool(paper.title)).join("")}</div>`
+          : `<p class="empty-state">No papers yet. Ask SlyOS to draft or import one.</p>`
+      }
     </div>
   `;
 }
 
 function renderCowork(): string {
+  const chats = agentResponses();
   return `
     <div class="panel-screen cowork-screen">
       ${screenHeader("Cowork", "research")}
       <p class="screen-subtitle">A local agent that builds real files - give it a task, it does it step by step.</p>
       <div class="cowork-actions">
-        <button class="primary-pill" type="button">+ New chat</button>
+        <button class="primary-pill" type="button" data-screen="home">+ New chat</button>
         <button type="button">Files</button>
       </div>
       <div class="search-card">🔍 <span>Search chats...</span></div>
-      <p class="empty-state">No chats yet. Tap New chat to start.</p>
+      ${
+        chats.length
+          ? `<div class="tool-list">${chats.map((chat) => rowTool(chat.title)).join("")}</div>`
+          : `<p class="empty-state">No chats yet. Run a prompt from Home.</p>`
+      }
     </div>
   `;
 }
 
 function renderApps(): string {
-  const apps = ["Phone", "Messages", "Camera", "Browser", "Files", "Settings", "Calendar", "Mail", "Terminal", "Shortcuts", "Look", "Expenses"];
+  const apps: Array<{ label: string; screen: ShellScreen }> = [
+    { label: "Setup", screen: "setup" },
+    { label: "Memory", screen: "memory" },
+    { label: "Now", screen: "now" },
+    { label: "Research", screen: "research" },
+    { label: "Look", screen: "look" },
+    { label: "Expenses", screen: "expenses" },
+    { label: "Manual mode", screen: "manual" }
+  ];
   return `
     <div class="panel-screen">
       ${screenHeader("Apps")}
@@ -602,7 +729,7 @@ function renderApps(): string {
         ${shortcuts.map((shortcut) => renderShortcut(shortcut)).join("")}
       </div>
       <div class="tool-list">
-        ${apps.map((app) => rowTool(app)).join("")}
+        ${apps.map((app) => rowTool(app.label, app.screen)).join("")}
       </div>
     </div>
   `;
@@ -610,7 +737,12 @@ function renderApps(): string {
 
 function renderManual(): string {
   agentPaused = true;
-  const tools = ["Phone", "Messages", "Camera", "Browser", "Files", "Settings", "Checklist", "Outreach emails"];
+  const tools = [
+    `Provider: ${providerLabel()}`,
+    `Sync: ${syncStatus}`,
+    `Bridge: ${deviceBridgeStatus}`,
+    `Memories: ${localMemories().length}`
+  ];
   return `
     <div class="panel-screen manual-screen">
       <h2>Manual Mode</h2>
@@ -624,18 +756,49 @@ function renderManual(): string {
 }
 
 function renderSetup(): string {
+  const currentProvider = providerOptions.find((option) => option.id === selectedProvider) ?? {
+    id: "gemini" as const,
+    label: "Gemini",
+    defaultModel: "gemini-1.5-flash",
+    keyPlaceholder: "AIza..."
+  };
+  const blockers = setupBlockers();
   return `
     <div class="panel-screen setup-screen">
       ${screenHeader("Setup")}
-      <div class="caption-line">Step 1 of 5</div>
+      <div class="caption-line">${setupComplete ? "Setup complete" : `${blockers.length} setup item${blockers.length === 1 ? "" : "s"} left`}</div>
       <section class="setup-block">
-        <h3>Pick your brain</h3>
-        <p>SlyOS runs on your own model key. Gemini can start free; Claude/OpenAI can be added for stronger work.</p>
-        <div class="chip-row"><button>Gemini · free</button><button>Claude</button><button>OpenAI</button></div>
+        <h3>Your brain profile</h3>
+        <p>This profile is injected into model requests and synced only when you push settings.</p>
+        <div class="sync-grid">
+          <input id="profile-name" value="${escapeAttr(profileName)}" placeholder="Your name" />
+          <input id="profile-voice" value="${escapeAttr(profileVoice)}" placeholder="Writing voice / personality" />
+        </div>
+      </section>
+      <section class="setup-block">
+        <h3>Model</h3>
+        <p>SlyOS calls the provider you choose here. Keys stay in this device's local storage.</p>
+        <div class="chip-row provider-row">
+          ${providerOptions
+            .map(
+              (option) =>
+                `<button class="${option.id === selectedProvider ? "active" : ""}" data-provider="${option.id}" type="button">${escapeHtml(option.label)}</button>`
+            )
+            .join("")}
+        </div>
+        <div class="sync-grid">
+          <input id="provider-model" value="${escapeAttr(modelName)}" placeholder="${escapeAttr(currentProvider.defaultModel)}" />
+          <input id="provider-key" type="password" value="${escapeAttr(providerApiKey)}" placeholder="${escapeAttr(currentProvider.keyPlaceholder)}" />
+        </div>
+        <div class="button-pair">
+          <button id="provider-save" type="button">Save model</button>
+          <button id="provider-test" type="button">Test model</button>
+        </div>
+        <div class="caption-line">${escapeHtml(providerStatus)}</div>
       </section>
       <section class="setup-block">
         <h3>Sync account</h3>
-        <p>Optional Supabase memory/settings sync. Use only a publishable client key.</p>
+        <p>Supabase sync stores memory and settings across Mac, iPhone, Linux, and Windows builds.</p>
         <div class="sync-grid">
           <input id="supabase-url" value="${escapeAttr(supabaseUrl)}" placeholder="https://project-ref.supabase.co" />
           <input id="supabase-key" value="${escapeAttr(supabasePublishableKey)}" placeholder="publishable key" />
@@ -653,7 +816,7 @@ function renderSetup(): string {
       </section>
       <section class="setup-block">
         <h3>Device control</h3>
-        <p>Local bridge for observe, click, type, hotkeys, clipboard, and app control.</p>
+        <p>Mac bridge for observe, click, type, hotkeys, clipboard, and app control. iOS allows app-scoped control only.</p>
         <div class="sync-grid">
           <input id="device-bridge-url" value="${escapeAttr(deviceBridgeUrl)}" placeholder="http://127.0.0.1:4317" />
           <input id="device-bridge-token" value="${escapeAttr(deviceBridgeToken)}" placeholder="agent token" />
@@ -667,8 +830,14 @@ function renderSetup(): string {
       </section>
       <section class="setup-block">
         <h3>Bring in your data</h3>
-        <p>WhatsApp .txt · LinkedIn messages.csv · Instagram/Telegram .json · PDFs · receipts.</p>
+        <p>Add a manual memory now; importers can feed the same brain store.</p>
+        <form id="setup-remember-form" class="remember-form">
+          <input id="setup-remember-title" placeholder="Memory title" />
+          <input id="setup-remember-body" placeholder="Thing SlyOS should remember" />
+          <button type="submit">Remember</button>
+        </form>
       </section>
+      <button id="setup-complete" class="primary-wide orange" type="button">${setupComplete ? "Back to SlyOS" : "Complete setup"}</button>
     </div>
   `;
 }
@@ -707,16 +876,20 @@ function renderVoice(): string {
   return `
     <div class="voice-screen">
       <button class="voice-end" type="button" data-screen="home"><span>●</span>End</button>
-      <div class="voice-graph" aria-hidden="true">${renderMemoryGraph([], "")}</div>
+      <div class="voice-graph" aria-hidden="true">${renderMemoryGraph(localMemories(), "")}</div>
       <div class="listening">listening...</div>
     </div>
   `;
 }
 
 function renderBottomNav(): string {
+  const blockerCount = setupBlockers().length;
+  const nowItem = blockerCount
+    ? { id: "now" as ShellScreen, label: "Now", icon: "⚡", badge: blockerCount }
+    : { id: "now" as ShellScreen, label: "Now", icon: "⚡" };
   const items: Array<{ id: ShellScreen; label: string; icon: string; badge?: number }> = [
     { id: "home", label: "Home", icon: "⌂" },
-    { id: "now", label: "Now", icon: "⚡", badge: screen === "research" ? 2 : 1 },
+    nowItem,
     { id: "research", label: "Research", icon: "⚗" },
     { id: "apps", label: "Apps", icon: "▦" }
   ];
@@ -754,8 +927,8 @@ function screenHeader(title: string, back: ShellScreen = "home"): string {
   `;
 }
 
-function rowTool(label: string): string {
-  return `<button class="tool-row" type="button"><span>${escapeHtml(label)}</span></button>`;
+function rowTool(label: string, target?: ShellScreen): string {
+  return `<button class="tool-row" type="button" ${target ? `data-screen="${target}"` : ""}><span>${escapeHtml(label)}</span></button>`;
 }
 
 function shouldShowNav(current: ShellScreen): boolean {
@@ -767,18 +940,13 @@ function wireEvents(): void {
     element.addEventListener("click", () => {
       const next = element.dataset.screen as ShellScreen | undefined;
       if (!next) return;
-      if (next !== "manual") agentPaused = false;
-      screen = next;
-      history.replaceState(null, "", `?screen=${screen}`);
-      render();
+      navigate(next);
     });
   });
 
   document.querySelector("[data-resume]")?.addEventListener("click", () => {
     agentPaused = false;
-    screen = "home";
-    history.replaceState(null, "", "?screen=home");
-    render();
+    navigate("home");
   });
 
   document.querySelector("[data-device-loop]")?.addEventListener("click", () => {
@@ -787,20 +955,7 @@ function wireEvents(): void {
 
   document.querySelector("#prompt-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    const input = document.querySelector<HTMLInputElement>("#prompt-input");
-    promptText = input?.value ?? "";
-    lastPlan = planPrompt(promptText);
-    if (promptText.trim()) {
-      memoryStore.add({
-        kind: "message",
-        title: `Prompt: ${promptText.trim().slice(0, 34)}`,
-        body: `Brain planned ${lastPlan.actions.length} steps for: ${promptText.trim()}`,
-        tags: ["prompt", "brain"],
-        source: "home"
-      });
-    }
-    promptText = "";
-    render();
+    void runPrompt();
   });
 
   document.querySelector("#memory-search-form")?.addEventListener("submit", (event) => {
@@ -821,6 +976,60 @@ function wireEvents(): void {
     if (!body) return;
     memoryStore.add({ kind: "fact", title, body, tags: ["manual"], source: "memory" });
     render();
+  });
+
+  document.querySelector("#setup-remember-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const title = document.querySelector<HTMLInputElement>("#setup-remember-title")?.value.trim() || "Remembered";
+    const body = document.querySelector<HTMLInputElement>("#setup-remember-body")?.value.trim();
+    if (!body) return;
+    memoryStore.add({ kind: "fact", title, body, tags: ["manual", "setup"], source: "setup" });
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-provider]").forEach((element) => {
+    element.addEventListener("click", () => {
+      selectedProvider = readProviderId(element.dataset.provider ?? null);
+      modelName =
+        window.localStorage.getItem(providerModelStorageKey(selectedProvider)) ?? defaultModelFor(selectedProvider);
+      providerApiKey = window.localStorage.getItem(providerKeyStorageKey(selectedProvider)) ?? "";
+      providerStatus = providerApiKey
+        ? `${providerLabel(selectedProvider)} key saved on this device.`
+        : `${providerLabel(selectedProvider)} key missing.`;
+      render();
+    });
+  });
+
+  document.querySelector("#provider-save")?.addEventListener("click", () => {
+    saveProviderSettings();
+    providerStatus = `${providerLabel()} settings saved.`;
+    render();
+  });
+
+  document.querySelector("#provider-test")?.addEventListener("click", () => {
+    void providerAction(async () => {
+      saveProviderSettings();
+      providerStatus = `Testing ${providerLabel()}...`;
+      render();
+      const text = await validateProviderKey({
+        provider: selectedProvider,
+        apiKey: providerApiKey,
+        model: modelName
+      });
+      providerStatus = `${providerLabel()} online: ${text}`;
+    });
+  });
+
+  document.querySelector("#setup-complete")?.addEventListener("click", () => {
+    saveProfileSettings();
+    saveProviderSettings();
+    setupComplete = true;
+    window.localStorage.setItem("slyos:setupComplete", "true");
+    memoryStore.setSetting("profileName", profileName);
+    memoryStore.setSetting("profileVoice", profileVoice);
+    memoryStore.setSetting("modelProvider", selectedProvider);
+    memoryStore.setSetting("modelName", modelName);
+    navigate("home");
   });
 
   document.querySelector("#sync-configure")?.addEventListener("click", () => {
@@ -963,6 +1172,83 @@ function saveDeviceBridgeSettings(): void {
     document.querySelector<HTMLInputElement>("#device-bridge-token")?.value.trim() || deviceBridgeToken;
   window.localStorage.setItem("slyos:deviceBridgeUrl", deviceBridgeUrl);
   window.localStorage.setItem("slyos:deviceBridgeToken", deviceBridgeToken);
+}
+
+async function runPrompt(): Promise<void> {
+  const input = document.querySelector<HTMLInputElement>("#prompt-input");
+  promptText = input?.value ?? "";
+  const request = promptText.trim();
+  if (!request || agentBusy) return;
+
+  lastPlan = planPrompt(request);
+  agentAnswer = providerApiKey.trim() ? "" : "Setup needs a model key before SlyOS can answer live.";
+  memoryStore.add({
+    kind: "message",
+    title: `Prompt: ${request.slice(0, 64)}`,
+    body: `Brain planned ${lastPlan.actions.length} step${lastPlan.actions.length === 1 ? "" : "s"} for: ${request}`,
+    tags: ["prompt", "brain"],
+    source: "home"
+  });
+  promptText = "";
+
+  if (!providerApiKey.trim()) {
+    render();
+    return;
+  }
+
+  agentBusy = true;
+  render();
+  try {
+    const answer = await generateWithProvider({
+      provider: selectedProvider,
+      apiKey: providerApiKey,
+      model: modelName,
+      prompt: request,
+      memoryContext: buildMemoryContext()
+    });
+    agentAnswer = answer;
+    memoryStore.add({
+      kind: "message",
+      title: `SlyOS: ${request.slice(0, 56)}`,
+      body: answer,
+      tags: ["agent-response", "brain"],
+      source: providerLabel()
+    });
+  } catch (error) {
+    agentAnswer = error instanceof Error ? error.message : String(error);
+  } finally {
+    agentBusy = false;
+    render();
+  }
+}
+
+async function providerAction(run: () => Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    providerStatus = error instanceof Error ? error.message : String(error);
+  }
+  render();
+}
+
+function saveProviderSettings(): void {
+  selectedProvider = readProviderId(selectedProvider);
+  modelName =
+    document.querySelector<HTMLInputElement>("#provider-model")?.value.trim() ||
+    window.localStorage.getItem(providerModelStorageKey(selectedProvider)) ||
+    defaultModelFor(selectedProvider);
+  providerApiKey = document.querySelector<HTMLInputElement>("#provider-key")?.value.trim() ?? providerApiKey;
+  window.localStorage.setItem("slyos:modelProvider", selectedProvider);
+  window.localStorage.setItem("slyos:modelName", modelName);
+  window.localStorage.setItem(providerModelStorageKey(selectedProvider), modelName);
+  if (providerApiKey) window.localStorage.setItem(providerKeyStorageKey(selectedProvider), providerApiKey);
+}
+
+function saveProfileSettings(): void {
+  profileName = document.querySelector<HTMLInputElement>("#profile-name")?.value.trim() ?? profileName;
+  profileVoice = document.querySelector<HTMLInputElement>("#profile-voice")?.value.trim() ?? profileVoice;
+  window.localStorage.setItem("slyos:profileName", profileName);
+  window.localStorage.setItem("slyos:profileVoice", profileVoice);
 }
 
 function escapeHtml(value: string): string {

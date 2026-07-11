@@ -48,7 +48,7 @@ struct SlyOSWebShell {
         #endif
         components.queryItems = [
             URLQueryItem(name: "native", value: platform),
-            URLQueryItem(name: "screen", value: "home")
+            URLQueryItem(name: "screen", value: "setup")
         ]
         return components.url ?? url
     }
