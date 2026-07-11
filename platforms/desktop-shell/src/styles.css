@@ -1733,6 +1733,157 @@ blockquote {
   font-size: 22px;
 }
 
+.compact-form {
+  margin-top: 10px;
+}
+
+.compact-card {
+  padding: 16px;
+}
+
+.checklist-card,
+.mission-card {
+  background: var(--elev);
+  border-radius: 24px;
+  padding: 18px;
+  margin: 18px 0;
+}
+
+.home-checklist {
+  margin-top: 10px;
+}
+
+.checklist-head,
+.mission-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  color: var(--faint);
+  font-size: 16px;
+  margin-bottom: 14px;
+}
+
+.checklist-head span,
+.mission-head span {
+  color: var(--accent);
+}
+
+.checklist-head b,
+.mission-head b {
+  color: var(--soft);
+  font-weight: 500;
+}
+
+.checklist-items,
+.mission-list {
+  display: grid;
+  gap: 8px;
+}
+
+.checklist-item,
+.mission-step {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 30px;
+  gap: 8px;
+  align-items: center;
+  min-height: 44px;
+  text-align: left;
+  color: var(--ink);
+}
+
+.mission-step {
+  grid-template-columns: 34px minmax(0, 1fr);
+  width: 100%;
+  border-top: 1px solid var(--hair);
+  padding: 12px 0 2px;
+}
+
+.mission-step:first-child {
+  border-top: 0;
+}
+
+.checklist-item button,
+.mission-step span {
+  color: var(--accent);
+  font-size: 20px;
+}
+
+.checklist-item span,
+.mission-step b {
+  min-width: 0;
+  font-size: 18px;
+  line-height: 1.14;
+  overflow-wrap: anywhere;
+}
+
+.mission-step b {
+  font-weight: 500;
+}
+
+.checklist-item button:last-child {
+  color: var(--faint);
+}
+
+.checklist-item.done span,
+.mission-step.done b {
+  color: var(--faint);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.mission-card h3 {
+  margin: 0 0 12px;
+  font-size: 27px;
+  line-height: 1.08;
+  font-weight: 600;
+}
+
+.mission-card p {
+  color: var(--soft);
+  font-size: 17px;
+  line-height: 1.2;
+  margin: 12px 0 14px;
+}
+
+.mission-meter {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--hair);
+}
+
+.mission-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.research-card small {
+  color: var(--faint);
+  line-height: 1.22;
+}
+
+.file-preview {
+  max-height: 230px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: rgba(226, 218, 203, 0.45);
+  border-radius: 14px;
+  color: var(--soft);
+  font-size: 14px;
+  line-height: 1.22;
+  margin: 14px 0;
+  padding: 14px;
+}
+
+.expenses-screen .brief-card,
+.checklist-screen .checklist-card {
+  margin-top: 12px;
+}
+
 .search-card {
   display: flex;
   align-items: center;

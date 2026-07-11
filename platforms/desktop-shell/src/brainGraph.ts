@@ -230,7 +230,7 @@ function render(
     const b = projected[edge.b];
     if (!a || !b) continue;
     const hot = selected ? edge.a === selected.id || edge.b === selected.id : false;
-    const alpha = hot ? 0.28 : sparseMemoryGraph ? 0.022 : selected || options.filterType ? 0.035 : dark ? 0.04 : 0.052;
+    const alpha = hot ? 0.28 : sparseMemoryGraph ? 0.006 : selected || options.filterType ? 0.035 : dark ? 0.04 : 0.052;
     ctx.strokeStyle = dark ? `rgba(232,100,44,${hot ? 0.26 : alpha})` : `rgba(26,23,20,${alpha})`;
     ctx.lineWidth = hot ? 1 : 0.55;
     line(ctx, a.x, a.y, b.x, b.y);
@@ -325,7 +325,7 @@ function projectAll(
   mode: "memory" | "voice"
 ): Array<{ x: number; y: number; depth: number } | undefined> {
   const rawExt = percentile(graph.nodes.map((node) => Math.max(Math.abs(node.x), Math.abs(node.y))), mode === "voice" ? 0.84 : 0.72);
-  const minExt = mode === "voice" ? 260 : graph.nodes.length < 12 ? 300 : 1;
+  const minExt = mode === "voice" ? 260 : graph.nodes.length < 12 ? 520 : 1;
   const ext = Math.max(minExt, rawExt);
   const scale = ((Math.min(width, height) * (mode === "voice" ? 0.5 : 0.36)) / Math.max(1, ext)) * zoom;
   const cx = width / 2;
@@ -408,6 +408,7 @@ function layout(nodes: BrainNode[], edges: BrainEdge[]): void {
 }
 
 function addSynapses(nodes: BrainNode[], edges: BrainEdge[]): void {
+  if (nodes.length < 14) return;
   const ids = nodes.filter((node) => node.type !== "hub").map((node) => node.id);
   const seen = new Set<string>(edges.map((edge) => `${Math.min(edge.a, edge.b)}:${Math.max(edge.a, edge.b)}`));
   for (const id of ids) {

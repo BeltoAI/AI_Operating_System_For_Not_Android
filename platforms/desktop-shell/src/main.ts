@@ -49,6 +49,7 @@ type ShellScreen =
   | "chat"
   | "operate"
   | "skill"
+  | "checklist"
   | "documents"
   | "investing"
   | "vault"
@@ -152,6 +153,57 @@ interface AutomationPrefs {
   floatingNav: boolean;
 }
 
+interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface MissionState {
+  id: string;
+  goal: string;
+  percent: number;
+  milestones: Array<{ id: string; text: string; done: boolean }>;
+  lastAssessment: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ResearchPaperRecord {
+  id: string;
+  title: string;
+  topic: string;
+  abstract: string;
+  outline: string[];
+  draft: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface CoworkFileRecord {
+  id: string;
+  name: string;
+  kind: "markdown" | "text" | "json";
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  lastWrittenPath?: string;
+}
+
+interface ExpenseRecord {
+  id: string;
+  merchant: string;
+  amount: number;
+  currency: string;
+  category: string;
+  note: string;
+  date: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 type DevicePrimitive = { type: string; [key: string]: unknown };
 type DeviceSequence = DevicePrimitive[];
 
@@ -199,12 +251,24 @@ let providerApiKey = window.localStorage.getItem(providerKeyStorageKey(selectedP
 let providerStatus = providerApiKey ? `${providerLabel(selectedProvider)} key saved on this device.` : "model key missing";
 let agentAnswer = "";
 let agentBusy = false;
+let homeChecklistVisible = false;
+let missionStatus = "";
+let networkQuery = "";
+let networkStatus = "";
+let researchStatus = "";
+let coworkStatus = "";
+let expensesStatus = "";
 const memorySearchHistoryKey = "slyos:memorySearchHistory";
 const outboxKey = "slyos:outboxRecords";
 const nowTasksKey = "slyos:nowTasks";
 const dismissedProposalsKey = "slyos:dismissedProposals";
 const perAppModesKey = "slyos:perAppModes";
 const automationPrefsKey = "slyos:automationPrefs";
+const checklistKey = "slyos:checklist";
+const missionKey = "slyos:mission";
+const researchPapersKey = "slyos:researchPapers";
+const coworkFilesKey = "slyos:coworkFiles";
+const expensesKey = "slyos:expenses";
 
 const defaultAutomationPrefs: AutomationPrefs = {
   reconnectWeekly: true,
@@ -250,6 +314,7 @@ const routeScreens = new Set<ShellScreen>([
   "chat",
   "operate",
   "skill",
+  "checklist",
   "documents",
   "investing",
   "vault",
@@ -508,6 +573,769 @@ function writeJsonStorage<T>(key: string, value: T): void {
 
 function agentResponses(): MemoryItem[] {
   return localMemories().filter((item) => item.tags.includes("agent-response"));
+}
+
+function checklistItems(): ChecklistItem[] {
+  return readJsonStorage<ChecklistItem[]>(checklistKey, [])
+    .filter(isChecklistItem)
+    .sort((a, b) => Number(a.done) - Number(b.done) || b.createdAt.localeCompare(a.createdAt));
+}
+
+function saveChecklistItems(items: ChecklistItem[]): void {
+  writeJsonStorage(checklistKey, items.filter(isChecklistItem));
+}
+
+function isChecklistItem(value: unknown): value is ChecklistItem {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.id === "string" &&
+    typeof item.text === "string" &&
+    typeof item.done === "boolean" &&
+    typeof item.createdAt === "string" &&
+    typeof item.updatedAt === "string"
+  );
+}
+
+function addChecklistItem(text: string): ChecklistItem {
+  const now = new Date().toISOString();
+  const item: ChecklistItem = { id: localId("todo"), text: text.trim(), done: false, createdAt: now, updatedAt: now };
+  saveChecklistItems([item, ...checklistItems()]);
+  memoryStore.add({
+    kind: "memory",
+    title: `Checklist: ${item.text}`,
+    body: `Added to checklist: ${item.text}`,
+    tags: ["checklist", "task", "brain"],
+    source: "checklist"
+  });
+  return item;
+}
+
+function toggleChecklistItem(id: string): void {
+  const now = new Date().toISOString();
+  const next = checklistItems().map((item) => (item.id === id ? { ...item, done: !item.done, updatedAt: now } : item));
+  saveChecklistItems(next);
+}
+
+function removeChecklistItem(id: string): void {
+  const item = checklistItems().find((candidate) => candidate.id === id);
+  saveChecklistItems(checklistItems().filter((candidate) => candidate.id !== id));
+  if (item) {
+    memoryStore.add({
+      kind: "memory",
+      title: `Removed checklist: ${item.text}`,
+      body: `Removed from checklist: ${item.text}`,
+      tags: ["checklist", "task", "brain"],
+      source: "checklist"
+    });
+  }
+}
+
+function missionState(): MissionState | null {
+  const value = readJsonStorage<MissionState | null>(missionKey, null);
+  return isMissionState(value) ? value : null;
+}
+
+function saveMissionState(value: MissionState): void {
+  writeJsonStorage(missionKey, value);
+  memoryStore.setSetting("mission", value);
+}
+
+function isMissionState(value: unknown): value is MissionState {
+  if (!value || typeof value !== "object") return false;
+  const mission = value as Record<string, unknown>;
+  return (
+    typeof mission.id === "string" &&
+    typeof mission.goal === "string" &&
+    typeof mission.percent === "number" &&
+    Array.isArray(mission.milestones) &&
+    typeof mission.lastAssessment === "string" &&
+    typeof mission.createdAt === "string" &&
+    typeof mission.updatedAt === "string"
+  );
+}
+
+function researchPapers(): ResearchPaperRecord[] {
+  return readJsonStorage<ResearchPaperRecord[]>(researchPapersKey, [])
+    .filter(isResearchPaper)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+function saveResearchPapers(papers: ResearchPaperRecord[]): void {
+  writeJsonStorage(researchPapersKey, papers.filter(isResearchPaper).slice(0, 100));
+}
+
+function isResearchPaper(value: unknown): value is ResearchPaperRecord {
+  if (!value || typeof value !== "object") return false;
+  const paper = value as Record<string, unknown>;
+  return (
+    typeof paper.id === "string" &&
+    typeof paper.title === "string" &&
+    typeof paper.topic === "string" &&
+    typeof paper.abstract === "string" &&
+    Array.isArray(paper.outline) &&
+    typeof paper.draft === "string" &&
+    typeof paper.createdAt === "string" &&
+    typeof paper.updatedAt === "string"
+  );
+}
+
+function coworkFiles(): CoworkFileRecord[] {
+  return readJsonStorage<CoworkFileRecord[]>(coworkFilesKey, [])
+    .filter(isCoworkFile)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+function saveCoworkFiles(files: CoworkFileRecord[]): void {
+  writeJsonStorage(coworkFilesKey, files.filter(isCoworkFile).slice(0, 200));
+}
+
+function isCoworkFile(value: unknown): value is CoworkFileRecord {
+  if (!value || typeof value !== "object") return false;
+  const file = value as Record<string, unknown>;
+  return (
+    typeof file.id === "string" &&
+    typeof file.name === "string" &&
+    typeof file.kind === "string" &&
+    typeof file.content === "string" &&
+    typeof file.createdAt === "string" &&
+    typeof file.updatedAt === "string"
+  );
+}
+
+function expenseRecords(): ExpenseRecord[] {
+  return readJsonStorage<ExpenseRecord[]>(expensesKey, [])
+    .filter(isExpenseRecord)
+    .sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt));
+}
+
+function saveExpenseRecords(records: ExpenseRecord[]): void {
+  writeJsonStorage(expensesKey, records.filter(isExpenseRecord).slice(0, 500));
+}
+
+function isExpenseRecord(value: unknown): value is ExpenseRecord {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === "string" &&
+    typeof record.merchant === "string" &&
+    typeof record.amount === "number" &&
+    typeof record.currency === "string" &&
+    typeof record.category === "string" &&
+    typeof record.note === "string" &&
+    typeof record.date === "string" &&
+    typeof record.createdAt === "string" &&
+    typeof record.updatedAt === "string"
+  );
+}
+
+function formatMoney(amount: number, currency = "USD"): string {
+  try {
+    return new Intl.NumberFormat([], { style: "currency", currency }).format(amount);
+  } catch {
+    return `$${amount.toFixed(2)}`;
+  }
+}
+
+function startMission(goal: string): MissionState {
+  const trimmed = goal.trim();
+  const now = new Date().toISOString();
+  const mission: MissionState = {
+    id: localId("mission"),
+    goal: trimmed,
+    percent: 0,
+    milestones: missionMilestones(trimmed).map((text, index) => ({
+      id: `step_${index + 1}`,
+      text,
+      done: false
+    })),
+    lastAssessment: "Mission started. SlyOS will keep every prompt grounded in this goal until you replace it.",
+    createdAt: now,
+    updatedAt: now
+  };
+  saveMissionState(mission);
+  missionStatus = `Mission set: ${trimmed}`;
+  memoryStore.add({
+    kind: "memory",
+    title: `Mission: ${trimmed}`,
+    body: mission.milestones.map((step, index) => `${index + 1}. ${step.text}`).join("\n"),
+    tags: ["mission", "task", "brain"],
+    source: "mission"
+  });
+  return mission;
+}
+
+function missionMilestones(goal: string): string[] {
+  const lower = goal.toLowerCase();
+  if (/\bbuyer|customer|lead|sell|sales\b/.test(lower)) {
+    return [
+      "Define the ideal buyer and the proof they care about",
+      "Find a first list of companies and decision makers",
+      "Draft a short outreach message in your voice",
+      "Stage outreach drafts in Now for approval",
+      "Track replies, objections, and follow-up dates"
+    ];
+  }
+  if (/\bjob|hiring|hire|role|recruit\b/.test(lower)) {
+    return [
+      "Clarify target roles, locations, and constraints",
+      "Find companies hiring for the exact profile",
+      "Identify people who can refer or explain the team",
+      "Draft role-specific messages and applications",
+      "Track responses and next follow-ups"
+    ];
+  }
+  if (/\bnetwork|people|investor|partner|opportunit/.test(lower)) {
+    return [
+      "Map the kind of people or organizations needed",
+      "Search memory for existing warm paths",
+      "Draft a first contact message through your persona",
+      "Queue follow-ups in Now",
+      "Capture new facts back into the brain"
+    ];
+  }
+  return [
+    "Translate the goal into concrete next actions",
+    "Gather context from memory, files, and the current device",
+    "Produce the first deliverable or draft",
+    "Ask for approval before external sends or risky actions",
+    "Store outcomes and update the mission state"
+  ];
+}
+
+function toggleMissionStep(id: string): void {
+  const mission = missionState();
+  if (!mission) return;
+  const milestones = mission.milestones.map((step) => (step.id === id ? { ...step, done: !step.done } : step));
+  const done = milestones.filter((step) => step.done).length;
+  const percent = milestones.length ? Math.round((done / milestones.length) * 100) : 0;
+  const now = new Date().toISOString();
+  saveMissionState({
+    ...mission,
+    milestones,
+    percent,
+    lastAssessment:
+      percent === 100
+        ? "Mission complete. The full loop has been marked done."
+        : `${done}/${milestones.length} mission step${milestones.length === 1 ? "" : "s"} complete.`,
+    updatedAt: now
+  });
+}
+
+function networkResults(query: string): MemoryItem[] {
+  const tokens = searchTokens(query);
+  if (!tokens.length) return [];
+  return localMemories()
+    .map((item) => ({ item, score: networkScore(item, tokens) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || b.item.updatedAt.localeCompare(a.item.updatedAt))
+    .map((entry) => entry.item)
+    .slice(0, 12);
+}
+
+function networkScore(item: MemoryItem, tokens: string[]): number {
+  const haystack = [item.title, item.body, item.source, ...item.tags].join(" ").toLowerCase();
+  let score = 0;
+  for (const token of tokens) {
+    if (haystack.includes(token)) score += token.length > 4 ? 2 : 1;
+  }
+  if (item.kind === "profile" || item.tags.includes("person")) score += 4;
+  if (item.tags.includes("network")) score += 3;
+  if (item.tags.includes("persona")) score += 1;
+  return score;
+}
+
+function searchTokens(query: string): string[] {
+  return Array.from(
+    new Set(
+      query
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .map((token) => token.trim())
+        .filter((token) => token.length > 2 && !["the", "and", "for", "with", "who", "are", "you"].includes(token))
+    )
+  );
+}
+
+async function draftNetworkMessage(id: string): Promise<void> {
+  const item = localMemories().find((candidate) => candidate.id === id);
+  if (!item) return;
+  const now = new Date().toISOString();
+  const task: NowTask = {
+    id: localId("task"),
+    contact: item.title,
+    app: item.source || "Messages",
+    text: `Reach out using this brain context: ${item.body}`,
+    status: "waiting",
+    createdAt: now,
+    updatedAt: now,
+    source: "network",
+    screen: "network"
+  };
+  const draft = await buildTaskDraft(task);
+  const staged: NowTask = { ...task, draft, status: "drafted", updatedAt: new Date().toISOString() };
+  saveNowTasks([staged, ...nowTasks()]);
+  recordOutbox({
+    title: `Network draft for ${item.title}`,
+    target: item.title,
+    channel: item.source || "Network",
+    body: draft,
+    why: "drafted from the My network search and held in Now",
+    status: "draft"
+  });
+  networkStatus = `Draft staged for ${item.title}. Open Now to approve or edit it.`;
+}
+
+async function createResearchPaper(topic: string): Promise<ResearchPaperRecord> {
+  const cleanTopic = cleanCommandSubject(topic);
+  const now = new Date().toISOString();
+  const generated = providerApiKey.trim() ? await generatePaperWithProvider(cleanTopic) : null;
+  const fallback = localPaperDraft(cleanTopic);
+  const paper: ResearchPaperRecord = {
+    id: localId("paper"),
+    title: generated?.title || fallback.title,
+    topic: cleanTopic,
+    abstract: generated?.abstract || fallback.abstract,
+    outline: generated?.outline?.length ? generated.outline.slice(0, 7) : fallback.outline,
+    draft: generated?.draft || fallback.draft,
+    createdAt: now,
+    updatedAt: now
+  };
+  saveResearchPapers([paper, ...researchPapers()]);
+  memoryStore.add({
+    kind: "paper",
+    title: paper.title,
+    body: `${paper.abstract}\n\n${paper.draft}`.slice(0, 80000),
+    tags: ["paper", "research", "brain"],
+    source: "research"
+  });
+  researchStatus = `Paper drafted: ${paper.title}`;
+  return paper;
+}
+
+async function generatePaperWithProvider(topic: string): Promise<Partial<ResearchPaperRecord> | null> {
+  try {
+    const raw = await generateWithProvider({
+      provider: selectedProvider,
+      apiKey: providerApiKey,
+      model: modelName,
+      prompt:
+        "Create a concise research paper draft for SlyOS. Return strict JSON with keys title, abstract, outline (array), and draft (markdown). No prose outside JSON.\n\n" +
+        `Topic: ${topic}`,
+      memoryContext: buildMemoryContext()
+    });
+    const parsed = parseJsonObject(raw);
+    if (!parsed) return { draft: raw };
+    const paper: Partial<ResearchPaperRecord> = {};
+    if (typeof parsed.title === "string") paper.title = parsed.title;
+    if (typeof parsed.abstract === "string") paper.abstract = parsed.abstract;
+    if (Array.isArray(parsed.outline)) {
+      const outline = parsed.outline.filter((item): item is string => typeof item === "string");
+      if (outline.length) paper.outline = outline;
+    }
+    if (typeof parsed.draft === "string") paper.draft = parsed.draft;
+    return paper;
+  } catch (error) {
+    researchStatus = error instanceof Error ? error.message : String(error);
+    return null;
+  }
+}
+
+function localPaperDraft(topic: string): Pick<ResearchPaperRecord, "title" | "abstract" | "outline" | "draft"> {
+  const title = paperTitle(topic);
+  const memories = memoryStore.search(topic).slice(0, 5);
+  const context = memories.length
+    ? memories.map((item) => `- ${item.title}: ${item.body.slice(0, 220)}`).join("\n")
+    : "- No direct memory hits yet; this draft marks assumptions and asks for sources.";
+  const outline = [
+    "Problem and motivation",
+    "Relevant memory context",
+    "Proposed approach",
+    "Risks, constraints, and open questions",
+    "Next experiments"
+  ];
+  const abstract = `A working paper on ${topic}, grounded in the local SlyOS brain and ready for source expansion.`;
+  const draft = `# ${title}
+
+## Abstract
+${abstract}
+
+## Brain Context
+${context}
+
+## Argument
+${topic} needs to be evaluated through concrete user workflows, not vague capability claims. SlyOS should connect the user's memory, current device context, and approval-gated actions into one loop.
+
+## Proposed Approach
+1. Capture the user's goal and relevant memories.
+2. Generate a plan with read-only context steps first.
+3. Produce drafts, files, or device-control actions only after risk checks.
+4. Write every meaningful result back into the brain.
+
+## Open Questions
+- Which sources should be imported before the next draft?
+- Which device permissions are required for the intended workflow?
+- What action should be staged in Now instead of executed immediately?
+`;
+  return { title, abstract, outline, draft };
+}
+
+function paperTitle(topic: string): string {
+  const clean = cleanCommandSubject(topic).replace(/\bpaper\b/gi, "").trim() || "Untitled research";
+  return clean
+    .split(/\s+/)
+    .map((word) => (word.length > 2 ? `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}` : word.toLowerCase()))
+    .join(" ");
+}
+
+function savePaperToCowork(id: string): void {
+  const paper = researchPapers().find((candidate) => candidate.id === id);
+  if (!paper) return;
+  const now = new Date().toISOString();
+  const file: CoworkFileRecord = {
+    id: localId("file"),
+    name: `${slugify(paper.title) || "research-paper"}.md`,
+    kind: "markdown",
+    content: paper.draft,
+    createdAt: now,
+    updatedAt: now
+  };
+  saveCoworkFiles([file, ...coworkFiles()]);
+  coworkStatus = `Saved ${file.name} from Research.`;
+  screen = "cowork";
+}
+
+async function createCoworkFile(name: string, task: string): Promise<CoworkFileRecord> {
+  const cleanTask = cleanCommandSubject(task || name);
+  const safeName = sanitizeFileName(name || `${slugify(cleanTask) || "slyos-file"}.md`);
+  const kind = safeName.endsWith(".json") ? "json" : safeName.endsWith(".txt") ? "text" : "markdown";
+  const now = new Date().toISOString();
+  const content = providerApiKey.trim()
+    ? await generateCoworkContentWithProvider(safeName, cleanTask)
+    : localCoworkContent(safeName, cleanTask);
+  const file: CoworkFileRecord = {
+    id: localId("file"),
+    name: safeName,
+    kind,
+    content,
+    createdAt: now,
+    updatedAt: now
+  };
+  saveCoworkFiles([file, ...coworkFiles()]);
+  memoryStore.add({
+    kind: "document",
+    title: `Cowork: ${file.name}`,
+    body: file.content,
+    tags: ["cowork", "document", "brain"],
+    source: "cowork"
+  });
+  coworkStatus = `Built ${file.name}.`;
+  return file;
+}
+
+async function generateCoworkContentWithProvider(name: string, task: string): Promise<string> {
+  try {
+    return await generateWithProvider({
+      provider: selectedProvider,
+      apiKey: providerApiKey,
+      model: modelName,
+      prompt: `Build the requested file content only. No wrapper text.\n\nFile: ${name}\nTask: ${task}`,
+      memoryContext: buildMemoryContext()
+    });
+  } catch {
+    return localCoworkContent(name, task);
+  }
+}
+
+function localCoworkContent(name: string, task: string): string {
+  if (name.endsWith(".json")) {
+    return JSON.stringify(
+      {
+        task,
+        createdBy: "SlyOS",
+        status: "draft",
+        nextSteps: ["Review content", "Add missing data", "Run through the brain again"]
+      },
+      null,
+      2
+    );
+  }
+  if (name.endsWith(".txt")) {
+    return `SlyOS draft\n\nTask: ${task}\n\nNext steps:\n- Review the draft.\n- Add missing source data.\n- Ask SlyOS to revise with more context.\n`;
+  }
+  return `# ${paperTitle(task)}
+
+## Task
+${task}
+
+## Draft
+SlyOS created this file from the local brain. Add source material or a model key for richer generation.
+
+## Next Steps
+- Review for accuracy.
+- Import any missing context.
+- Ask SlyOS to revise or write this to Mac.
+`;
+}
+
+async function writeCoworkFileToBridge(id: string): Promise<void> {
+  const file = coworkFiles().find((candidate) => candidate.id === id);
+  if (!file) return;
+  await deviceAction(async () => {
+    const payload = await deviceFetch("/capabilities");
+    const allowedRoots = Array.isArray(payload.capabilities?.allowedRoots)
+      ? payload.capabilities.allowedRoots
+      : Array.isArray(payload.allowedRoots)
+        ? payload.allowedRoots
+        : [];
+    const root = allowedRoots.find((item: unknown): item is string => typeof item === "string");
+    if (!root) throw new Error("No writable bridge root is configured.");
+    const path = `${root.replace(/\/$/, "")}/cowork/${sanitizeFileName(file.name)}`;
+    const result = await deviceFetch("/actions", {
+      method: "POST",
+      body: JSON.stringify({ type: "write_file", path, content: file.content, overwrite: true })
+    });
+    const writtenPath = String(result.result?.path ?? path);
+    saveCoworkFiles(
+      coworkFiles().map((candidate) =>
+        candidate.id === id ? { ...candidate, lastWrittenPath: writtenPath, updatedAt: new Date().toISOString() } : candidate
+      )
+    );
+    coworkStatus = `Wrote ${file.name} to ${writtenPath}`;
+    recordOutbox({
+      title: `Wrote ${file.name}`,
+      target: platformLabel(),
+      channel: "Cowork",
+      body: writtenPath,
+      why: "file written through the local desktop bridge",
+      status: "done"
+    });
+  });
+}
+
+function sanitizeFileName(value: string): string {
+  const cleaned = value
+    .trim()
+    .replace(/[/:\\?%*"<>|]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 90);
+  if (!cleaned) return "slyos-file.md";
+  return /\.[a-z0-9]{2,8}$/i.test(cleaned) ? cleaned : `${cleaned}.md`;
+}
+
+function saveExpenseFromForm(): void {
+  const merchant = document.querySelector<HTMLInputElement>("#expense-merchant")?.value.trim() ?? "";
+  const amountRaw = document.querySelector<HTMLInputElement>("#expense-amount")?.value.trim() ?? "";
+  const category = document.querySelector<HTMLInputElement>("#expense-category")?.value.trim() ?? "";
+  const note = document.querySelector<HTMLInputElement>("#expense-note")?.value.trim() ?? "";
+  const amount = Number(amountRaw.replace(/[^0-9. -]/g, ""));
+  if (!merchant || !Number.isFinite(amount) || amount <= 0) {
+    expensesStatus = "Merchant and a valid amount are required.";
+    return;
+  }
+  logExpense({ merchant, amount, category: category || inferExpenseCategory(`${merchant} ${note}`), note });
+}
+
+function logExpense(input: { merchant: string; amount: number; category?: string; note?: string; currency?: string; date?: string }): ExpenseRecord {
+  const now = new Date().toISOString();
+  const record: ExpenseRecord = {
+    id: localId("expense"),
+    merchant: input.merchant,
+    amount: Math.round(input.amount * 100) / 100,
+    currency: input.currency ?? "USD",
+    category: input.category || "General",
+    note: input.note ?? "",
+    date: input.date ?? now.slice(0, 10),
+    createdAt: now,
+    updatedAt: now
+  };
+  saveExpenseRecords([record, ...expenseRecords()]);
+  memoryStore.add({
+    kind: "expense",
+    title: `Expense: ${record.merchant}`,
+    body: `${formatMoney(record.amount, record.currency)} · ${record.category}${record.note ? ` · ${record.note}` : ""}`,
+    tags: ["expense", "receipt", "brain", record.category.toLowerCase()],
+    source: "expenses"
+  });
+  expensesStatus = `Logged ${formatMoney(record.amount, record.currency)} at ${record.merchant}.`;
+  return record;
+}
+
+function parseExpensePrompt(prompt: string): { merchant: string; amount: number; category?: string; note?: string } | null {
+  if (!/\b(spent|expense|receipt|invoice|purchase|bought|paid)\b/i.test(prompt)) return null;
+  const amountMatch = prompt.match(/(?:\$|usd\s*)?(\d+(?:[.,]\d{1,2})?)/i);
+  if (!amountMatch?.[1]) return null;
+  const amount = Number(amountMatch[1].replace(",", "."));
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const merchant =
+    prompt.match(/\b(?:at|to|from|for)\s+([A-Za-z0-9&' .-]{2,48}?)(?:\s+(?:for|on|as|category|because)\b|[.,;]|$)/i)?.[1]?.trim() ||
+    prompt.match(/\b(?:spent|paid|bought|purchase(?:d)?)\s+(?:\$|usd\s*)?\d+(?:[.,]\d{1,2})?\s+([A-Za-z0-9&' .-]{2,48}?)(?:\s+(?:for|on|as|category|because)\b|[.,;]|$)/i)?.[1]?.trim() ||
+    "Unknown merchant";
+  const note = prompt.replace(amountMatch[0], "").trim();
+  return { merchant: merchant.replace(/[.,;:!?]+$/g, ""), amount, category: inferExpenseCategory(prompt), note };
+}
+
+function inferExpenseCategory(text: string): string {
+  const lower = text.toLowerCase();
+  if (/\b(coffee|restaurant|lunch|dinner|breakfast|food|starbucks|doordash|uber eats)\b/.test(lower)) return "Food";
+  if (/\b(uber|lyft|taxi|train|flight|gas|parking)\b/.test(lower)) return "Travel";
+  if (/\b(aws|supabase|openai|github|software|domain|hosting|vercel)\b/.test(lower)) return "Software";
+  if (/\b(hotel|airbnb|lodging)\b/.test(lower)) return "Lodging";
+  return "General";
+}
+
+async function runLocalWorkflow(request: string): Promise<boolean> {
+  const lower = request.toLowerCase();
+
+  const checklistText = extractChecklistText(request);
+  if (checklistText) {
+    const item = addChecklistItem(checklistText);
+    homeChecklistVisible = true;
+    agentAnswer = `Added to checklist: ${item.text}`;
+    return true;
+  }
+  if (/\b(show|open|view)\s+(my\s+)?(checklist|todo|to-do|tasks)\b/.test(lower)) {
+    homeChecklistVisible = true;
+    screen = "checklist";
+    agentAnswer = "Checklist opened.";
+    return true;
+  }
+
+  const missionGoal = extractMissionGoal(request);
+  if (missionGoal) {
+    startMission(missionGoal);
+    screen = "mission";
+    agentAnswer = `Mission set: ${missionGoal}`;
+    return true;
+  }
+
+  const expense = parseExpensePrompt(request);
+  if (expense) {
+    logExpense(expense);
+    screen = "expenses";
+    agentAnswer = expensesStatus;
+    return true;
+  }
+
+  const paperTopic = extractResearchTopic(request);
+  if (paperTopic) {
+    agentBusy = true;
+    screen = "research";
+    render();
+    try {
+      const paper = await createResearchPaper(paperTopic);
+      agentAnswer = `Research paper drafted: ${paper.title}`;
+    } finally {
+      agentBusy = false;
+    }
+    return true;
+  }
+
+  const fileTask = extractCoworkTask(request);
+  if (fileTask) {
+    agentBusy = true;
+    screen = "cowork";
+    render();
+    try {
+      const file = await createCoworkFile(fileTask.name, fileTask.task);
+      agentAnswer = `Cowork built ${file.name}.`;
+    } finally {
+      agentBusy = false;
+    }
+    return true;
+  }
+
+  const networkSearch = extractNetworkSearch(request);
+  if (networkSearch) {
+    networkQuery = networkSearch;
+    const results = networkResults(networkQuery);
+    networkStatus = results.length
+      ? `Found ${results.length} local brain match${results.length === 1 ? "" : "es"}.`
+      : "No local matches yet. Import contacts/history or save people memories first.";
+    screen = "network";
+    agentAnswer = networkStatus;
+    return true;
+  }
+
+  return false;
+}
+
+function extractChecklistText(prompt: string): string {
+  const patterns = [
+    /\b(?:add|put|save)\s+(.+?)\s+(?:to|on|onto)\s+(?:my\s+)?(?:checklist|todo|to-do|task list)\b/i,
+    /\b(?:checklist|todo|to-do|task)\s*[:\-]\s*(.+)$/i,
+    /\bremember\s+(.+?)\s+as\s+(?:a\s+)?(?:task|todo|checklist item)\b/i
+  ];
+  for (const pattern of patterns) {
+    const match = prompt.match(pattern);
+    if (match?.[1]) return cleanCommandSubject(match[1]);
+  }
+  return "";
+}
+
+function extractMissionGoal(prompt: string): string {
+  const match =
+    prompt.match(/\b(?:set|start|run|create)\s+(?:my\s+)?mission(?:\s+to)?\s+(.+)$/i) ||
+    prompt.match(/\bmission\s*[:\-]\s*(.+)$/i);
+  if (match?.[1]) return cleanCommandSubject(match[1]);
+  const choice = missionChoices.find((item) => prompt.toLowerCase().includes(item.title.toLowerCase()));
+  return choice?.title ?? "";
+}
+
+function extractResearchTopic(prompt: string): string {
+  if (!/\b(research|paper|write-up|whitepaper)\b/i.test(prompt)) return "";
+  const match =
+    prompt.match(/\b(?:write|draft|create|make|start)\s+(?:a\s+)?(?:research\s+)?(?:paper|write-up|whitepaper)\s+(?:on|about|for)\s+(.+)$/i) ||
+    prompt.match(/\bresearch\s+(?:paper\s+)?(?:on|about|for)?\s*(.+)$/i);
+  return cleanCommandSubject(match?.[1] ?? prompt.replace(/\b(write|draft|create|make|start|research|paper|whitepaper|write-up)\b/gi, " "));
+}
+
+function extractCoworkTask(prompt: string): { name: string; task: string } | null {
+  if (!/\b(cowork|file|markdown|document|doc|write|build|create|make)\b/i.test(prompt)) return null;
+  if (/\b(research|paper|whitepaper)\b/i.test(prompt)) return null;
+  const explicitName = prompt.match(/\b(?:file|as|named|called)\s+([A-Za-z0-9_. -]+\.(?:md|txt|json))\b/i)?.[1]?.trim() ?? "";
+  const task = cleanCommandSubject(
+    prompt.replace(/\b(?:cowork|create|make|build|write|a|an|new|file|document|markdown|doc)\b/gi, " ")
+  );
+  if (!task && !explicitName) return null;
+  return {
+    name: explicitName || `${slugify(task || "slyos-file") || "slyos-file"}.md`,
+    task: task || `Create ${explicitName}`
+  };
+}
+
+function extractNetworkSearch(prompt: string): string {
+  const match =
+    prompt.match(/\b(?:search|find|look for)\s+(?:my\s+)?(?:network|contacts|people)\s+(?:for|about)?\s*(.+)$/i) ||
+    prompt.match(/\b(?:find|look for)\s+(.+?)\s+(?:in|from)\s+(?:my\s+)?(?:network|contacts|people)\b/i);
+  if (match?.[1]) return cleanCommandSubject(match[1]);
+  if (/\b(my network|contacts|people i know|investors|ctos|founders)\b/i.test(prompt)) return cleanCommandSubject(prompt);
+  return "";
+}
+
+function cleanCommandSubject(value: string): string {
+  return value
+    .replace(/^["'“”]+|["'“”]+$/g, "")
+    .replace(/[.?!]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 240);
+}
+
+function parseJsonObject(raw: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}");
+    if (start === -1 || end <= start) return null;
+    try {
+      return JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
 }
 
 function outboxRecords(): OutboxRecord[] {
@@ -815,6 +1643,7 @@ function navigate(next: ShellScreen): void {
 }
 
 function render(): void {
+  syncRouteToScreen();
   appRoot.innerHTML = `
     <main class="os-stage">
       <section class="device-shell ${screen === "boot" ? "booting" : ""}" aria-label="SlyOS shell">
@@ -827,6 +1656,14 @@ function render(): void {
     </main>
   `;
   wireEvents();
+}
+
+function syncRouteToScreen(): void {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("screen") === screen && (!nativePlatform || params.get("native") === nativePlatform)) return;
+  params.set("screen", screen);
+  if (nativePlatform) params.set("native", nativePlatform);
+  history.replaceState(null, "", `?${params.toString()}`);
 }
 
 function renderScreen(): string {
@@ -865,6 +1702,8 @@ function renderScreen(): string {
       return renderOperate();
     case "skill":
       return renderSkill();
+    case "checklist":
+      return renderChecklist();
     case "documents":
       return renderDocuments();
     case "investing":
@@ -958,6 +1797,7 @@ function renderHome(): string {
         <div>tap to talk</div>
       </button>
       ${agentAnswer ? `<section class="agent-answer"><span>SlyOS</span><p>${escapeHtml(agentAnswer)}</p></section>` : ""}
+      ${homeChecklistVisible ? renderChecklistCard("home") : ""}
     </div>
   `;
 }
@@ -1421,66 +2261,177 @@ function renderFeatureRow(feature: FeatureStatus, platform: "ios" | "macos"): st
 }
 
 function renderMission(): string {
+  const mission = missionState();
   return `
     <div class="panel-screen mission-screen">
       ${screenHeader("Mission", "memory")}
+      ${missionStatus ? `<section class="agent-answer"><span>mission</span><p>${escapeHtml(missionStatus)}</p></section>` : ""}
+      ${
+        mission
+          ? `<section class="mission-card">
+              <div class="mission-head">
+                <span>Current mission</span>
+                <b>${mission.percent}%</b>
+              </div>
+              <h3>${escapeHtml(mission.goal)}</h3>
+              <div class="mission-meter"><i style="width:${Math.max(2, Math.min(100, mission.percent))}%"></i></div>
+              <p>${escapeHtml(mission.lastAssessment)}</p>
+              <div class="mission-list">
+                ${mission.milestones.map((step) => renderMissionStep(step)).join("")}
+              </div>
+            </section>`
+          : ""
+      }
       <div class="section-label">Pick a mission</div>
       <div class="settings-list compact">
-        ${missionChoices.map((choice) => renderSettingsCard(choice)).join("")}
+        ${missionChoices.map(renderMissionChoice).join("")}
       </div>
-      <textarea class="mission-input" placeholder="Or type your own mission (include a location)..."></textarea>
-      <button class="primary-wide" type="button">Run custom mission</button>
+      <form id="mission-form" class="stack-form">
+        <textarea id="mission-input" class="mission-input" placeholder="Or type your own mission (include a location)..."></textarea>
+        <button class="primary-wide" type="submit">Run custom mission</button>
+      </form>
     </div>
+  `;
+}
+
+function renderMissionChoice(choice: SettingsCard): string {
+  return `
+    <button class="settings-card" type="button" data-mission-choice="${escapeAttr(choice.title)}">
+      <span class="settings-copy">
+        <strong>${escapeHtml(choice.title)}</strong>
+        ${choice.subtitle ? `<small>${escapeHtml(choice.subtitle)}</small>` : ""}
+      </span>
+      <b>›</b>
+    </button>
+  `;
+}
+
+function renderMissionStep(step: { id: string; text: string; done: boolean }): string {
+  return `
+    <button class="mission-step ${step.done ? "done" : ""}" type="button" data-mission-toggle="${escapeAttr(step.id)}">
+      <span>${step.done ? "☑" : "☐"}</span>
+      <b>${escapeHtml(step.text)}</b>
+    </button>
   `;
 }
 
 function renderNetwork(): string {
+  const results = networkQuery ? networkResults(networkQuery) : [];
   return `
     <div class="panel-screen network-screen">
       ${screenHeader("My network", "memory")}
-      <textarea class="network-input" placeholder="Who are you looking for? e.g. CTOs, investors, people at Google"></textarea>
-      <button class="primary-wide orange" type="button">Search my network</button>
+      <form id="network-form" class="stack-form">
+        <textarea id="network-query" class="network-input" placeholder="Who are you looking for? e.g. CTOs, investors, people at Google">${escapeHtml(networkQuery)}</textarea>
+        <button class="primary-wide orange" type="submit">Search my network</button>
+      </form>
+      ${networkStatus ? `<section class="agent-answer"><span>network</span><p>${escapeHtml(networkStatus)}</p></section>` : ""}
+      <div class="section-label">Matches · ${results.length}</div>
+      <div class="sent-list">
+        ${
+          results.length
+            ? results.map(renderNetworkResult).join("")
+            : `<p class="empty-state">Search your brain for people, companies, or relationships.</p>`
+        }
+      </div>
     </div>
+  `;
+}
+
+function renderNetworkResult(item: MemoryItem): string {
+  return `
+    <article class="sent-card compact-card">
+      <div class="sent-top">
+        <div>
+          <h3>${escapeHtml(item.title)}</h3>
+          <span>${escapeHtml(item.source)} · ${escapeHtml(item.kind)}</span>
+        </div>
+      </div>
+      <p>${escapeHtml(item.body)}</p>
+      <div class="outbox-actions">
+        <button type="button" data-network-draft="${escapeAttr(item.id)}">Draft message</button>
+      </div>
+    </article>
   `;
 }
 
 function renderResearch(): string {
-  const papers = localMemories().filter((item) => item.tags.includes("paper"));
+  const papers = researchPapers();
   return `
     <div class="panel-screen">
       ${screenHeader("Research")}
       <p class="screen-subtitle">${papers.length} paper${papers.length === 1 ? "" : "s"} in local brain</p>
+      ${researchStatus ? `<section class="agent-answer"><span>research</span><p>${escapeHtml(researchStatus)}</p></section>` : ""}
       <div class="research-actions">
-        <button class="primary-pill" type="button" data-screen="home">+ New paper</button>
+        <button class="primary-pill" type="submit" form="research-form">+ New paper</button>
         <button class="secondary-pill" type="button" data-screen="cowork">⌘ Cowork</button>
       </div>
-      <div class="search-card">🔍 <span>Search papers...</span></div>
-      ${
-        papers.length
-          ? `<div class="tool-list">${papers.map((paper) => rowTool(paper.title)).join("")}</div>`
-          : `<p class="empty-state">No papers yet. Ask SlyOS to draft or import one.</p>`
-      }
+      <form id="research-form" class="stack-form compact-form">
+        <input id="research-topic" placeholder="Paper topic..." />
+      </form>
+      <div class="sent-list">
+        ${papers.length ? papers.map(renderPaperCard).join("") : `<p class="empty-state">No papers yet. Ask SlyOS to draft or import one.</p>`}
+      </div>
     </div>
   `;
 }
 
+function renderPaperCard(paper: ResearchPaperRecord): string {
+  return `
+    <article class="sent-card research-card">
+      <div class="sent-top">
+        <div>
+          <h3>${escapeHtml(paper.title)}</h3>
+          <span>${escapeHtml(new Date(paper.updatedAt).toLocaleString())}</span>
+        </div>
+      </div>
+      <p>${escapeHtml(paper.abstract)}</p>
+      <small>${paper.outline.map((item) => `• ${escapeHtml(item)}`).join("<br />")}</small>
+      <div class="outbox-actions">
+        <button type="button" data-paper-open="${escapeAttr(paper.id)}">Save to Cowork</button>
+      </div>
+    </article>
+  `;
+}
+
 function renderCowork(): string {
-  const chats = agentResponses();
+  const files = coworkFiles();
   return `
     <div class="panel-screen cowork-screen">
       ${screenHeader("Cowork", "research")}
       <p class="screen-subtitle">A local agent that builds real files - give it a task, it does it step by step.</p>
+      ${coworkStatus ? `<section class="agent-answer"><span>cowork</span><p>${escapeHtml(coworkStatus)}</p></section>` : ""}
       <div class="cowork-actions">
-        <button class="primary-pill" type="button" data-screen="home">+ New chat</button>
-        <button type="button">Files</button>
+        <button class="primary-pill" type="submit" form="cowork-form">+ New file</button>
+        <button type="button" data-cowork-list="true">Files</button>
       </div>
-      <div class="search-card">🔍 <span>Search chats...</span></div>
-      ${
-        chats.length
-          ? `<div class="tool-list">${chats.map((chat) => rowTool(chat.title)).join("")}</div>`
-          : `<p class="empty-state">No chats yet. Run a prompt from Home.</p>`
-      }
+      <form id="cowork-form" class="stack-form">
+        <input id="cowork-name" placeholder="File name, e.g. plan.md" />
+        <textarea id="cowork-task" placeholder="What should SlyOS build in this file?"></textarea>
+        <button class="primary-wide orange" type="submit">Build file</button>
+      </form>
+      <div class="section-label">Files · ${files.length}</div>
+      <div class="sent-list">
+        ${files.length ? files.map(renderCoworkFile).join("") : `<p class="empty-state">No files yet. Give Cowork a task.</p>`}
+      </div>
     </div>
+  `;
+}
+
+function renderCoworkFile(file: CoworkFileRecord): string {
+  return `
+    <article class="sent-card compact-card">
+      <div class="sent-top">
+        <div>
+          <h3>${escapeHtml(file.name)}</h3>
+          <span>${escapeHtml(new Date(file.updatedAt).toLocaleString())}</span>
+        </div>
+      </div>
+      <pre class="file-preview">${escapeHtml(file.content.slice(0, 900))}</pre>
+      ${file.lastWrittenPath ? `<small>Written to ${escapeHtml(file.lastWrittenPath)}</small>` : ""}
+      <div class="outbox-actions">
+        <button type="button" data-cowork-write="${escapeAttr(file.id)}">Write to Mac</button>
+      </div>
+    </article>
   `;
 }
 
@@ -1566,6 +2517,48 @@ function renderSkill(): string {
       <div class="tool-list">
         ${skills.length ? skills.map((skill) => rowTool(skill.title, "operate")).join("") : `<p class="empty-state">No saved skills yet.</p>`}
       </div>
+    </div>
+  `;
+}
+
+function renderChecklist(): string {
+  return `
+    <div class="panel-screen checklist-screen">
+      ${screenHeader("Checklist", "apps")}
+      <form id="checklist-form" class="stack-form compact-form">
+        <input id="checklist-input" placeholder="Add something..." />
+        <button class="primary-wide orange" type="submit">Add to checklist</button>
+      </form>
+      ${renderChecklistCard("screen")}
+    </div>
+  `;
+}
+
+function renderChecklistCard(mode: "home" | "screen"): string {
+  const items = checklistItems();
+  const open = items.filter((item) => !item.done).length;
+  return `
+    <section class="checklist-card ${mode === "home" ? "home-checklist" : ""}">
+      <div class="checklist-head">
+        <span>Checklist</span>
+        <b>${open} open</b>
+      </div>
+      ${
+        items.length
+          ? `<div class="checklist-items">${items.map(renderChecklistItem).join("")}</div>`
+          : `<p class="empty-state small">Nothing on your checklist.</p>`
+      }
+      ${mode === "home" ? `<button class="text-button" type="button" data-screen="checklist">Open checklist</button>` : ""}
+    </section>
+  `;
+}
+
+function renderChecklistItem(item: ChecklistItem): string {
+  return `
+    <div class="checklist-item ${item.done ? "done" : ""}">
+      <button type="button" data-checklist-toggle="${escapeAttr(item.id)}">${item.done ? "☑" : "☐"}</button>
+      <span>${escapeHtml(item.text)}</span>
+      <button type="button" data-checklist-remove="${escapeAttr(item.id)}">✕</button>
     </div>
   `;
 }
@@ -1827,6 +2820,7 @@ function renderApps(): string {
     { label: "Setup", screen: "setup" },
     { label: "Memory", screen: "memory" },
     { label: "Now", screen: "now" },
+    { label: "Checklist", screen: "checklist" },
     { label: "Chat", screen: "chat" },
     { label: "Operate device", screen: "operate" },
     { label: "Research", screen: "research" },
@@ -1985,17 +2979,44 @@ function renderPermissionCard(title: string, items: string[]): string {
 }
 
 function renderExpenses(): string {
+  const records = expenseRecords();
+  const total = records.reduce((sum, item) => sum + item.amount, 0);
   return `
-    <div class="panel-screen">
+    <div class="panel-screen expenses-screen">
       ${screenHeader("Expenses")}
+      ${expensesStatus ? `<section class="agent-answer"><span>expenses</span><p>${escapeHtml(expensesStatus)}</p></section>` : ""}
       <section class="brief-card">
         <div class="eyebrow">Receipt brain</div>
-        <p>Receipts, invoices, and Gmail/PDF imports become searchable spending memory.</p>
+        <p>${records.length ? `${records.length} expense${records.length === 1 ? "" : "s"} logged · ${formatMoney(total)} total.` : "Receipts, invoices, and imports become searchable spending memory."}</p>
       </section>
-      <div class="tool-list">
-        ${["Snap receipt", "Import invoice", "Ask spending", "Monthly totals"].map((tool) => rowTool(tool)).join("")}
+      <form id="expenses-form" class="stack-form">
+        <div class="sync-grid">
+          <input id="expense-merchant" placeholder="Merchant" />
+          <input id="expense-amount" inputmode="decimal" placeholder="Amount" />
+          <input id="expense-category" placeholder="Category" />
+          <input id="expense-note" placeholder="Note / receipt detail" />
+        </div>
+        <button class="primary-wide orange" type="submit">Log expense</button>
+      </form>
+      <div class="sent-list">
+        ${records.length ? records.map(renderExpenseRecord).join("") : `<p class="empty-state">No expenses logged yet.</p>`}
       </div>
     </div>
+  `;
+}
+
+function renderExpenseRecord(record: ExpenseRecord): string {
+  return `
+    <article class="sent-card compact-card">
+      <div class="sent-top">
+        <div>
+          <h3>${escapeHtml(record.merchant)}</h3>
+          <span>${escapeHtml(record.category)} · ${escapeHtml(record.date)}</span>
+        </div>
+        <b>${escapeHtml(formatMoney(record.amount, record.currency))}</b>
+      </div>
+      <p>${escapeHtml(record.note || "Logged from SlyOS.")}</p>
+    </article>
   `;
 }
 
@@ -2051,7 +3072,8 @@ function renderNavItem(item: { id: ShellScreen; label: string; icon: string; bad
   const active =
     screen === item.id ||
     (item.id === "now" && ["outbox", "reconnect"].includes(screen)) ||
-    (item.id === "research" && screen === "cowork");
+    (item.id === "research" && screen === "cowork") ||
+    (item.id === "apps" && ["checklist", "expenses", "documents", "imports", "skill", "investing", "vault", "backup", "models", "feature-parity"].includes(screen));
   return `
     <button class="nav-tab ${active ? "active" : ""}" data-screen="${item.id}">
       <span class="nav-icon icon-${item.icon}">${item.badge ? `<b>${item.badge}</b>` : ""}</span>
@@ -2074,7 +3096,20 @@ function rowTool(label: string, target?: ShellScreen): string {
 }
 
 function shouldShowNav(current: ShellScreen): boolean {
-  return ["home", "now", "memory", "memory-settings", "research", "apps", "manual"].includes(current);
+  return [
+    "home",
+    "now",
+    "memory",
+    "memory-settings",
+    "mission",
+    "network",
+    "checklist",
+    "research",
+    "cowork",
+    "expenses",
+    "apps",
+    "manual"
+  ].includes(current);
 }
 
 function wireEvents(): void {
@@ -2177,6 +3212,122 @@ function wireEvents(): void {
   document.querySelector("#prompt-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
     void runPrompt();
+  });
+
+  document.querySelector("#checklist-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const text = document.querySelector<HTMLInputElement>("#checklist-input")?.value.trim() ?? "";
+    if (!text) return;
+    addChecklistItem(text);
+    homeChecklistVisible = true;
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-checklist-toggle]").forEach((element) => {
+    element.addEventListener("click", () => {
+      toggleChecklistItem(element.dataset.checklistToggle ?? "");
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-checklist-remove]").forEach((element) => {
+    element.addEventListener("click", () => {
+      removeChecklistItem(element.dataset.checklistRemove ?? "");
+      render();
+    });
+  });
+
+  document.querySelector("#mission-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const goal = document.querySelector<HTMLTextAreaElement>("#mission-input")?.value.trim() ?? "";
+    if (!goal) return;
+    startMission(goal);
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-mission-choice]").forEach((element) => {
+    element.addEventListener("click", () => {
+      const goal = element.dataset.missionChoice ?? "";
+      if (!goal) return;
+      startMission(goal);
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-mission-toggle]").forEach((element) => {
+    element.addEventListener("click", () => {
+      toggleMissionStep(element.dataset.missionToggle ?? "");
+      render();
+    });
+  });
+
+  document.querySelector("#network-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    networkQuery = document.querySelector<HTMLTextAreaElement>("#network-query")?.value.trim() ?? "";
+    const results = networkResults(networkQuery);
+    networkStatus = networkQuery
+      ? results.length
+        ? `Found ${results.length} local brain match${results.length === 1 ? "" : "es"}.`
+        : "No local matches yet. Import contacts/history or save people memories first."
+      : "";
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-network-draft]").forEach((element) => {
+    element.addEventListener("click", () => {
+      void draftNetworkMessage(element.dataset.networkDraft ?? "").then(() => render());
+    });
+  });
+
+  document.querySelector("#research-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const topic = document.querySelector<HTMLInputElement>("#research-topic")?.value.trim() ?? "";
+    if (!topic) return;
+    researchStatus = "Drafting paper through the brain...";
+    agentBusy = true;
+    render();
+    void createResearchPaper(topic).finally(() => {
+      agentBusy = false;
+      render();
+    });
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-paper-open]").forEach((element) => {
+    element.addEventListener("click", () => {
+      savePaperToCowork(element.dataset.paperOpen ?? "");
+      render();
+    });
+  });
+
+  document.querySelector("#cowork-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const name = document.querySelector<HTMLInputElement>("#cowork-name")?.value.trim() ?? "";
+    const task = document.querySelector<HTMLTextAreaElement>("#cowork-task")?.value.trim() ?? "";
+    if (!name && !task) return;
+    coworkStatus = "Building file through the brain...";
+    agentBusy = true;
+    render();
+    void createCoworkFile(name, task).finally(() => {
+      agentBusy = false;
+      render();
+    });
+  });
+
+  document.querySelector("[data-cowork-list]")?.addEventListener("click", () => {
+    coworkStatus = coworkFiles().length ? `${coworkFiles().length} file${coworkFiles().length === 1 ? "" : "s"} stored.` : "No files yet.";
+    render();
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-cowork-write]").forEach((element) => {
+    element.addEventListener("click", () => {
+      void writeCoworkFileToBridge(element.dataset.coworkWrite ?? "");
+    });
+  });
+
+  document.querySelector("#expenses-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveExpenseFromForm();
+    render();
   });
 
   document.querySelector("#chat-form")?.addEventListener("submit", (event) => {
@@ -3194,6 +4345,11 @@ async function runPrompt(): Promise<void> {
       agentBusy = false;
       render();
     }
+    return;
+  }
+
+  if (await runLocalWorkflow(request)) {
+    render();
     return;
   }
 
