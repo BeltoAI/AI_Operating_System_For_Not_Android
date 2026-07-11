@@ -14,7 +14,7 @@ Ready-to-paste cross-platform download copy is in:
 docs/WEBSITE_DOWNLOAD_COPY.md
 ```
 
-The release assets should be uploaded to GitHub with stable aliases:
+The release assets are uploaded to GitHub with stable aliases:
 
 ```text
 slyos-web-pwa.zip
@@ -22,8 +22,8 @@ slyos-desktop-agent.zip
 slyos-macos-app.zip
 ```
 
-Those stable names make the website links work through:
+Use the tag-pinned release URLs in `docs/WEBSITE_DOWNLOAD_COPY.md`. The stable asset names are:
 
 ```text
-https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/latest/download/<asset-name>
+https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.1/<asset-name>
 ```
