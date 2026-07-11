@@ -115,14 +115,14 @@ export function wireBrainCanvas(canvas: HTMLCanvasElement, graph: BrainGraph, op
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  let yaw = options.mode === "voice" ? 0.15 : 0;
+  let userYaw = 0;
   let tilt = options.mode === "voice" ? 0.42 : 0.35;
-  let zoom = options.mode === "voice" ? 1.18 : 1;
+  let zoom = options.mode === "voice" ? 1.08 : 1;
   let dragging = false;
   let lastX = 0;
   let lastY = 0;
   let moved = false;
-  let frame = 0;
+  const startedAt = performance.now();
 
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
@@ -139,15 +139,17 @@ export function wireBrainCanvas(canvas: HTMLCanvasElement, graph: BrainGraph, op
   const draw = () => {
     if (!canvas.isConnected) return;
     resize();
+    const elapsed = performance.now() - startedAt;
+    const spinDuration = options.mode === "voice" ? 46000 : 90000;
+    const yaw = userYaw + (elapsed / spinDuration) * Math.PI * 2;
     render(ctx, canvas, graph, {
       ...options,
       yaw,
       tilt,
       zoom,
-      tick: frame
+      elapsed
     });
-    yaw += options.mode === "voice" ? 0.005 : 0.0012;
-    frame = window.requestAnimationFrame(draw);
+    window.requestAnimationFrame(draw);
   };
 
   canvas.addEventListener("pointerdown", (event) => {
@@ -163,7 +165,7 @@ export function wireBrainCanvas(canvas: HTMLCanvasElement, graph: BrainGraph, op
     const dx = event.clientX - lastX;
     const dy = event.clientY - lastY;
     moved = moved || Math.abs(dx) + Math.abs(dy) > 4;
-    yaw += dx * 0.008;
+    userYaw += dx * 0.006;
     tilt = clamp(tilt - dy * 0.006, -1.25, 1.25);
     lastX = event.clientX;
     lastY = event.clientY;
@@ -172,6 +174,9 @@ export function wireBrainCanvas(canvas: HTMLCanvasElement, graph: BrainGraph, op
   canvas.addEventListener("pointerup", (event) => {
     dragging = false;
     if (!moved && options.onSelect) {
+      const elapsed = performance.now() - startedAt;
+      const spinDuration = options.mode === "voice" ? 46000 : 90000;
+      const yaw = userYaw + (elapsed / spinDuration) * Math.PI * 2;
       const hit = hitTest(canvas, graph, event.clientX, event.clientY, yaw, tilt, zoom, options);
       options.onSelect(hit?.key ?? null);
     }
@@ -193,7 +198,7 @@ function render(
   ctx: CanvasRenderingContext2D,
   canvas: HTMLCanvasElement,
   graph: BrainGraph,
-  options: BrainCanvasOptions & { yaw: number; tilt: number; zoom: number; tick: number }
+  options: BrainCanvasOptions & { yaw: number; tilt: number; zoom: number; elapsed: number }
 ): void {
   const rect = canvas.getBoundingClientRect();
   const width = rect.width;
@@ -203,8 +208,8 @@ function render(
   const dark = options.mode === "voice";
   if (dark) {
     const glow = ctx.createRadialGradient(width * 0.5, height * 0.58, 0, width * 0.5, height * 0.58, width * 0.52);
-    glow.addColorStop(0, "rgba(232,100,44,0.26)");
-    glow.addColorStop(0.38, "rgba(232,100,44,0.08)");
+    glow.addColorStop(0, "rgba(232,100,44,0.18)");
+    glow.addColorStop(0.38, "rgba(232,100,44,0.05)");
     glow.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = "#030302";
     ctx.fillRect(0, 0, width, height);
@@ -224,24 +229,26 @@ function render(
     const b = projected[edge.b];
     if (!a || !b) continue;
     const hot = selected ? edge.a === selected.id || edge.b === selected.id : false;
-    const alpha = hot ? 0.38 : selected || options.filterType ? 0.05 : dark ? 0.08 : 0.11;
-    ctx.strokeStyle = dark ? `rgba(232,100,44,${hot ? 0.42 : alpha})` : `rgba(26,23,20,${alpha})`;
-    ctx.lineWidth = hot ? 1.4 : 0.8;
+    const alpha = hot ? 0.28 : selected || options.filterType ? 0.035 : dark ? 0.04 : 0.052;
+    ctx.strokeStyle = dark ? `rgba(232,100,44,${hot ? 0.26 : alpha})` : `rgba(26,23,20,${alpha})`;
+    ctx.lineWidth = hot ? 1 : 0.55;
     line(ctx, a.x, a.y, b.x, b.y);
   }
 
-  const sparkCount = Math.min(14, graph.edges.length);
+  const sparkCount = Math.min(12, graph.edges.length);
+  const edgeSeed = Math.floor(options.elapsed / (options.mode === "voice" ? 1150 : 1400));
+  const flow = ((options.elapsed % (options.mode === "voice" ? 2200 : 1400)) / (options.mode === "voice" ? 2200 : 1400) + 1) % 1;
   for (let index = 0; index < sparkCount; index += 1) {
-    const edge = graph.edges[(Math.floor(options.tick / 7) * 31 + index * 977) % graph.edges.length];
+    const edge = graph.edges[(edgeSeed * 31 + index * 977) % graph.edges.length];
     if (!edge) continue;
     const a = projected[edge.a];
     const b = projected[edge.b];
     if (!a || !b) continue;
-    const phase = ((options.tick / 100 + index * 0.083) % 1 + 1) % 1;
-    ctx.strokeStyle = dark ? "rgba(232,100,44,0.28)" : "rgba(232,100,44,0.16)";
-    ctx.lineWidth = dark ? 1.3 : 1;
+    const phase = (flow + index * 0.083) % 1;
+    ctx.strokeStyle = dark ? "rgba(232,100,44,0.16)" : "rgba(232,100,44,0.13)";
+    ctx.lineWidth = dark ? 0.95 : 0.7;
     line(ctx, a.x, a.y, b.x, b.y);
-    circle(ctx, a.x + (b.x - a.x) * phase, a.y + (b.y - a.y) * phase, dark ? 2.8 : 2.1, "#e8642c", 1);
+    circle(ctx, a.x + (b.x - a.x) * phase, a.y + (b.y - a.y) * phase, dark ? 1.7 : 1.25, "#e8642c", 0.9);
   }
 
   const ordered = graph.nodes.map((node) => ({ node, pos: projected[node.id] })).filter((entry) => entry.pos).sort((a, b) => (a.pos?.depth ?? 0) - (b.pos?.depth ?? 0));
@@ -254,15 +261,15 @@ function render(
       (related && !related.has(node.id)) ||
       (!matchesQuery && node.type !== "hub");
     const selectedNode = node.key === options.selectedKey;
-    const radius = (options.mode === "voice" ? 2.8 : 3.2) + node.strength * (options.mode === "voice" ? 7.8 : 8.4);
-    const r = radius * pos.depth * (options.mode === "voice" ? 1.35 : 1);
+    const radius = (options.mode === "voice" ? 1.7 : 1.45) + node.strength * (options.mode === "voice" ? 4.15 : 3.45);
+    const r = radius * pos.depth;
     const color = selectedNode || node.type === "hub" ? "#e8642c" : nodeColor(node);
-    const alpha = dim ? 0.16 : clamp(0.42 + pos.depth * 0.58, 0.28, 1);
+    const alpha = dim ? 0.14 : clamp(0.45 + pos.depth * 0.55, 0.3, 1);
     circle(ctx, pos.x, pos.y, r, color, alpha);
     ctx.strokeStyle = dark ? `rgba(244,239,230,${0.08 * alpha})` : `rgba(26,23,20,${0.12 * alpha})`;
-    ctx.lineWidth = selectedNode ? 1.8 : 0.7;
+    ctx.lineWidth = selectedNode ? 1.5 : 0.65;
     ctx.beginPath();
-    ctx.arc(pos.x, pos.y, selectedNode ? r + 5 : r, 0, Math.PI * 2);
+    ctx.arc(pos.x, pos.y, selectedNode ? r + 4 : r, 0, Math.PI * 2);
     ctx.stroke();
     if ((selectedNode || node.type === "hub" || options.zoom > 1.65) && options.mode !== "voice") {
       ctx.fillStyle = "rgba(92,84,75,0.82)";
@@ -317,9 +324,9 @@ function projectAll(
   mode: "memory" | "voice"
 ): Array<{ x: number; y: number; depth: number } | undefined> {
   const ext = percentile(graph.nodes.map((node) => Math.max(Math.abs(node.x), Math.abs(node.y))), mode === "voice" ? 0.84 : 0.72);
-  const scale = ((Math.min(width, height) * (mode === "voice" ? 0.72 : 0.58)) / Math.max(1, ext)) * zoom;
+  const scale = ((Math.min(width, height) * (mode === "voice" ? 0.5 : 0.36)) / Math.max(1, ext)) * zoom;
   const cx = width / 2;
-  const cy = height * (mode === "voice" ? 0.52 : 0.5);
+  const cy = height * (mode === "voice" ? 0.54 : 0.52);
   return graph.nodes.map((node) => project(node, cx, cy, scale, yaw, tilt));
 }
 
@@ -340,15 +347,14 @@ function project(node: BrainNode, cx: number, cy: number, scale: number, yaw: nu
 
 function layout(nodes: BrainNode[], edges: BrainEdge[]): void {
   for (const node of nodes) {
-    const hash = hashString(node.key);
-    const angle = (hash % 360) * (Math.PI / 180);
-    const ring = 40 + (hash % 520);
-    node.x = Math.cos(angle) * ring;
-    node.y = Math.sin(angle) * ring * 0.86;
+    const rnd = seededRandom(hashString(`layout:${node.key}`));
+    node.x = (rnd() - 0.5) * 700;
+    node.y = (rnd() - 0.5) * 700;
   }
   nodes[0]!.x = 0;
   nodes[0]!.y = 0;
-  const iterations = nodes.length > 130 ? 72 : 320;
+  const minGap = 46;
+  const iterations = nodes.length > 120 ? 70 : 600;
   for (let iter = 0; iter < iterations; iter += 1) {
     for (let i = 0; i < nodes.length; i += 1) {
       const a = nodes[i]!;
@@ -365,6 +371,13 @@ function layout(nodes: BrainNode[], edges: BrainEdge[]): void {
         a.y += uy * force * 0.5;
         b.x -= ux * force * 0.5;
         b.y -= uy * force * 0.5;
+        if (dist < minGap) {
+          const push = (minGap - dist) * 0.5;
+          a.x += ux * push;
+          a.y += uy * push;
+          b.x -= ux * push;
+          b.y -= uy * push;
+        }
       }
     }
     for (const edge of edges) {
@@ -480,6 +493,14 @@ function hashString(value: string): number {
     hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
   }
   return hash;
+}
+
+function seededRandom(seed: number): () => number {
+  let state = seed || 1;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 0x100000000;
+  };
 }
 
 function trimLabel(value: string, limit: number): string {

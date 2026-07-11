@@ -41,10 +41,22 @@ type ShellScreen =
   | "people"
   | "memory"
   | "memory-settings"
+  | "feature-parity"
   | "mission"
   | "network"
   | "research"
   | "cowork"
+  | "chat"
+  | "operate"
+  | "skill"
+  | "documents"
+  | "investing"
+  | "vault"
+  | "backup"
+  | "floating-nav"
+  | "models"
+  | "per-app"
+  | "imports"
   | "apps"
   | "manual"
   | "setup"
@@ -63,6 +75,23 @@ interface SettingsCard {
   subtitle?: string;
   glyph?: string;
   screen?: ShellScreen;
+}
+
+interface FeatureStatus {
+  title: string;
+  android: string;
+  macos: string;
+  ios: string;
+  screen: ShellScreen;
+}
+
+interface VaultRecord {
+  id: string;
+  label: string;
+  ciphertext: string;
+  iv: string;
+  salt: string;
+  updatedAt: string;
 }
 
 const memoryStore = createBrowserMemoryStore(window.localStorage, "slyos");
@@ -93,6 +122,10 @@ let deviceBridgeToken =
   window.localStorage.getItem("slyos:deviceBridgeToken") ?? (nativePlatform === "macos" ? "slyos-local-dev" : "");
 let deviceBridgeStatus = "device bridge not checked";
 let deviceBridgeObservation = "";
+let operatePrompt = "";
+let operateStatus = "device loop idle";
+let vaultStatus = "locked";
+let revealedVault: { label: string; text: string } | null = null;
 let setupComplete = window.localStorage.getItem("slyos:setupComplete") === "true";
 let profileName = window.localStorage.getItem("slyos:profileName") ?? "";
 let profileVoice = window.localStorage.getItem("slyos:profileVoice") ?? "";
@@ -121,10 +154,22 @@ const routeScreens = new Set<ShellScreen>([
   "reconnect",
   "memory",
   "memory-settings",
+  "feature-parity",
   "mission",
   "network",
   "research",
   "cowork",
+  "chat",
+  "operate",
+  "skill",
+  "documents",
+  "investing",
+  "vault",
+  "backup",
+  "floating-nav",
+  "models",
+  "per-app",
+  "imports",
   "apps",
   "manual",
   "setup",
@@ -152,6 +197,163 @@ const missionChoices = [
   { title: "Find buyers for my product", subtitle: "Web-find companies that would buy it" },
   { title: "Find a job", subtitle: "Web-find companies hiring + people to reach" },
   { title: "Find people & opportunities", subtitle: "Web-find useful people/orgs to connect with" }
+];
+
+const docsFeatures: FeatureStatus[] = [
+  {
+    title: "First-run setup",
+    android: "native",
+    macos: "native",
+    ios: "native",
+    screen: "setup"
+  },
+  {
+    title: "Home launcher",
+    android: "home app",
+    macos: "full-window shell",
+    ios: "app shell",
+    screen: "home"
+  },
+  {
+    title: "Permissions",
+    android: "launcher/accessibility/overlay",
+    macos: "accessibility/screen recording",
+    ios: "sandboxed app grants",
+    screen: "setup"
+  },
+  {
+    title: "Prompt action plan",
+    android: "brain plan",
+    macos: "brain plan",
+    ios: "brain plan",
+    screen: "home"
+  },
+  {
+    title: "Voice call",
+    android: "in-app voice",
+    macos: "brain voice surface",
+    ios: "brain voice surface",
+    screen: "voice"
+  },
+  {
+    title: "Auto-reply",
+    android: "notification reply",
+    macos: "draft/bridge",
+    ios: "draft/handoff",
+    screen: "chat"
+  },
+  {
+    title: "Ask memory",
+    android: "local brain",
+    macos: "local + Supabase brain",
+    ios: "local + Supabase brain",
+    screen: "memory"
+  },
+  {
+    title: "Import history",
+    android: "chat import",
+    macos: "file import",
+    ios: "file/share import",
+    screen: "imports"
+  },
+  {
+    title: "Chat",
+    android: "chat brain",
+    macos: "chat brain",
+    ios: "chat brain",
+    screen: "chat"
+  },
+  {
+    title: "Operate device",
+    android: "accessibility loop",
+    macos: "local bridge loop",
+    ios: "shortcuts/handoff",
+    screen: "operate"
+  },
+  {
+    title: "Sign up/login",
+    android: "Supabase Auth",
+    macos: "Supabase Auth",
+    ios: "Supabase Auth",
+    screen: "setup"
+  },
+  {
+    title: "Teach a skill",
+    android: "record/replay",
+    macos: "local skill memory",
+    ios: "local skill memory",
+    screen: "skill"
+  },
+  {
+    title: "Look mode",
+    android: "camera/screenshot",
+    macos: "screenshot/webcam path",
+    ios: "camera/import",
+    screen: "look"
+  },
+  {
+    title: "Scan docs",
+    android: "camera/import",
+    macos: "file import",
+    ios: "file/import",
+    screen: "documents"
+  },
+  {
+    title: "Research",
+    android: "paper writer",
+    macos: "paper brain",
+    ios: "paper brain",
+    screen: "research"
+  },
+  {
+    title: "Cowork",
+    android: "local agent",
+    macos: "local agent",
+    ios: "chat companion",
+    screen: "cowork"
+  },
+  {
+    title: "Mission",
+    android: "agent mission",
+    macos: "agent mission",
+    ios: "agent mission",
+    screen: "mission"
+  },
+  {
+    title: "Investing",
+    android: "portfolio brain",
+    macos: "portfolio brain",
+    ios: "portfolio brain",
+    screen: "investing"
+  },
+  {
+    title: "Account sync",
+    android: "Supabase",
+    macos: "Supabase",
+    ios: "Supabase",
+    screen: "backup"
+  },
+  {
+    title: "Bank vault",
+    android: "encrypted vault",
+    macos: "encrypted vault",
+    ios: "encrypted vault",
+    screen: "vault"
+  },
+  {
+    title: "Models & cost",
+    android: "provider router",
+    macos: "provider router",
+    ios: "provider router",
+    screen: "models"
+  },
+  {
+    title: "Floating nav",
+    android: "overlay",
+    macos: "fixed overlay bar",
+    ios: "in-app bar",
+    screen: "floating-nav"
+  }
 ];
 
 setTimeout(() => {
@@ -206,8 +408,46 @@ function agentResponses(): MemoryItem[] {
   return localMemories().filter((item) => item.tags.includes("agent-response"));
 }
 
+function chatMemories(): MemoryItem[] {
+  return localMemories().filter((item) => item.kind === "chat" || item.kind === "message" || item.tags.includes("chat"));
+}
+
+function skillMemories(): MemoryItem[] {
+  return localMemories().filter((item) => item.tags.includes("skill"));
+}
+
+function documentMemories(): MemoryItem[] {
+  return localMemories().filter((item) => item.kind === "document" || item.kind === "doc" || item.tags.includes("document"));
+}
+
+function investingMemories(): MemoryItem[] {
+  return localMemories().filter((item) => item.tags.includes("investing"));
+}
+
 function peopleMemories(): MemoryItem[] {
   return localMemories().filter((item) => item.kind === "profile" || item.tags.includes("person"));
+}
+
+function vaultRecords(): VaultRecord[] {
+  const raw = window.localStorage.getItem("slyos:vaultRecords");
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(isVaultRecord);
+  } catch {
+    return [];
+  }
+}
+
+function saveVaultRecords(records: VaultRecord[]): void {
+  window.localStorage.setItem("slyos:vaultRecords", JSON.stringify(records));
+}
+
+function isVaultRecord(value: unknown): value is VaultRecord {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return ["id", "label", "ciphertext", "iv", "salt", "updatedAt"].every((key) => typeof record[key] === "string");
 }
 
 function setupBlockers(): string[] {
@@ -277,6 +517,8 @@ function renderScreen(): string {
       return renderMemory();
     case "memory-settings":
       return renderMemorySettings();
+    case "feature-parity":
+      return renderFeatureParity();
     case "mission":
       return renderMission();
     case "network":
@@ -285,6 +527,28 @@ function renderScreen(): string {
       return renderResearch();
     case "cowork":
       return renderCowork();
+    case "chat":
+      return renderChat();
+    case "operate":
+      return renderOperate();
+    case "skill":
+      return renderSkill();
+    case "documents":
+      return renderDocuments();
+    case "investing":
+      return renderInvesting();
+    case "vault":
+      return renderVault();
+    case "backup":
+      return renderBackup();
+    case "floating-nav":
+      return renderFloatingNav();
+    case "models":
+      return renderModels();
+    case "per-app":
+      return renderPerApp();
+    case "imports":
+      return renderImports();
     case "apps":
       return renderApps();
     case "manual":
@@ -630,22 +894,23 @@ function renderMemorySettings(): string {
     { title: "Your details", subtitle: profileName || "Name, contact, and profile context", screen: "setup" },
     { title: "API keys & model", subtitle: providerStatus, screen: "setup" },
     { title: "Efficiency", subtitle: `${agentResponses().length} agent output${agentResponses().length === 1 ? "" : "s"} stored` },
-    { title: "On-device model", subtitle: "Available per platform when native runtimes are installed", screen: "setup" },
+    { title: "On-device model", subtitle: "Available per platform when native runtimes are installed", screen: "models" },
     { title: "Appearance" },
-    { title: "Investing" },
-    { title: "Banking link" },
+    { title: "Investing", screen: "investing" },
+    { title: "Banking link", screen: "vault" },
     { title: "Talk to your agent", screen: "voice" },
     { title: "Your writing voice", ...(profileVoice ? { subtitle: profileVoice } : {}), screen: "setup" },
-    { title: "Persona per platform", screen: "setup" },
-    { title: "Your uploads", subtitle: `${localMemories().length} local brain item${localMemories().length === 1 ? "" : "s"}` },
-    { title: "Import & voice", screen: "setup" },
-    { title: "Models & spending", subtitle: `${providerLabel()} · ${modelName}`, screen: "setup" },
-    { title: "Connections", subtitle: syncStatus, screen: "setup" },
-    { title: "Per-app responses" },
-    { title: "Document Q&A" },
+    { title: "Persona per platform", screen: "per-app" },
+    { title: "Your uploads", subtitle: `${localMemories().length} local brain item${localMemories().length === 1 ? "" : "s"}`, screen: "documents" },
+    { title: "Import & voice", screen: "imports" },
+    { title: "Teach a skill", subtitle: `${skillMemories().length} saved`, screen: "skill" },
+    { title: "Models & spending", subtitle: `${providerLabel()} · ${modelName}`, screen: "models" },
+    { title: "Connections", subtitle: syncStatus, screen: "backup" },
+    { title: "Per-app responses", screen: "per-app" },
+    { title: "Document Q&A", screen: "documents" },
     { title: "Lock screen" },
-    { title: "Floating nav panel", subtitle: deviceBridgeStatus, screen: "setup" },
-    { title: "Brain backup", subtitle: syncStatus, glyph: "shield", screen: "setup" }
+    { title: "Floating nav panel", subtitle: deviceBridgeStatus, screen: "floating-nav" },
+    { title: "Brain backup", subtitle: syncStatus, glyph: "shield", screen: "backup" }
   ];
   return `
     <div class="panel-screen memory-settings-screen">
@@ -668,6 +933,31 @@ function renderSettingsCard(card: SettingsCard): string {
         ${card.subtitle ? `<small>${escapeHtml(card.subtitle)}</small>` : ""}
       </span>
       <b>›</b>
+    </button>
+  `;
+}
+
+function renderFeatureParity(): string {
+  const platform = nativePlatform === "ios" ? "ios" : "macos";
+  return `
+    <div class="panel-screen parity-screen">
+      ${screenHeader("Feature map", "apps")}
+      <p class="screen-subtitle">Public SlyOS docs mapped to this build. ${escapeHtml(platformLabel())} status is shown beside Android.</p>
+      <div class="feature-list">
+        ${docsFeatures.map((feature) => renderFeatureRow(feature, platform)).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderFeatureRow(feature: FeatureStatus, platform: "ios" | "macos"): string {
+  return `
+    <button class="feature-row" type="button" data-screen="${feature.screen}">
+      <span>
+        <strong>${escapeHtml(feature.title)}</strong>
+        <small>Android: ${escapeHtml(feature.android)}</small>
+      </span>
+      <b>${escapeHtml(platform === "ios" ? feature.ios : feature.macos)}</b>
     </button>
   `;
 }
@@ -736,14 +1026,303 @@ function renderCowork(): string {
   `;
 }
 
+function renderChat(): string {
+  const chats = chatMemories();
+  return `
+    <div class="panel-screen chat-screen">
+      ${screenHeader("Chat", "apps")}
+      <p class="screen-subtitle">Every chat turn writes back into the brain before it appears here.</p>
+      <form id="chat-form" class="stack-form">
+        <textarea id="chat-input" placeholder="Message your agent..."></textarea>
+        <button class="primary-wide orange" type="submit">Send through brain</button>
+      </form>
+      <div class="section-label">Chats · ${chats.length}</div>
+      <div class="sent-list">
+        ${
+          chats.length
+            ? chats.slice(0, 24).map(renderChatItem).join("")
+            : `<p class="empty-state">No chats yet. Start one here or from Home.</p>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+function renderChatItem(item: MemoryItem): string {
+  return `
+    <article class="sent-card compact-card">
+      <div class="sent-top">
+        <div>
+          <h3>${escapeHtml(item.title)}</h3>
+          <span>${escapeHtml(item.source)} · ${escapeHtml(new Date(item.createdAt).toLocaleString())}</span>
+        </div>
+      </div>
+      <p>${escapeHtml(item.body)}</p>
+    </article>
+  `;
+}
+
+function renderOperate(): string {
+  const plan = operatePrompt ? planPrompt(operatePrompt) : null;
+  return `
+    <div class="panel-screen operate-screen">
+      ${screenHeader("Operate", "apps")}
+      <p class="screen-subtitle">${escapeHtml(operateCopy())}</p>
+      <form id="operate-form" class="stack-form">
+        <textarea id="operate-input" placeholder="Tell SlyOS what to click, open, type, or inspect...">${escapeHtml(operatePrompt)}</textarea>
+        <div class="button-pair">
+          <button type="submit">Plan loop</button>
+          <button type="button" id="operate-observe">Observe</button>
+          <button type="button" id="operate-run">Run primitive</button>
+        </div>
+      </form>
+      <section class="brief-card">
+        <div class="brief-head">
+          <span>Device bridge</span>
+          <button type="button" data-screen="setup">Setup</button>
+        </div>
+        <p>${escapeHtml(operateStatus)}</p>
+        <strong>${escapeHtml(deviceBridgeStatus)}</strong>
+      </section>
+      ${plan ? renderBrainCard(plan) : ""}
+      ${
+        deviceBridgeObservation
+          ? `<section class="agent-answer"><span>latest observation</span><p>${escapeHtml(deviceBridgeObservation)}</p></section>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderSkill(): string {
+  const skills = skillMemories();
+  return `
+    <div class="panel-screen skill-screen">
+      ${screenHeader("Teach a skill", "memory-settings")}
+      <form id="skill-form" class="stack-form">
+        <input id="skill-name" placeholder="Skill name" />
+        <textarea id="skill-steps" placeholder="Steps SlyOS should remember and repeat..."></textarea>
+        <button class="primary-wide orange" type="submit">Save skill</button>
+      </form>
+      <div class="section-label">Skills · ${skills.length}</div>
+      <div class="tool-list">
+        ${skills.length ? skills.map((skill) => rowTool(skill.title, "operate")).join("") : `<p class="empty-state">No saved skills yet.</p>`}
+      </div>
+    </div>
+  `;
+}
+
+function renderDocuments(): string {
+  const docs = documentMemories();
+  return `
+    <div class="panel-screen documents-screen">
+      ${screenHeader("Document Q&A", "memory-settings")}
+      <form id="document-import-form" class="stack-form">
+        <input id="document-files" type="file" multiple />
+        <textarea id="document-note" placeholder="Optional note for the brain..."></textarea>
+        <button class="primary-wide orange" type="submit">Import documents</button>
+      </form>
+      <div class="section-label">Documents · ${docs.length}</div>
+      <div class="tool-list">
+        ${docs.length ? docs.slice(0, 30).map((doc) => rowTool(doc.title, "memory")).join("") : `<p class="empty-state">No documents imported yet.</p>`}
+      </div>
+    </div>
+  `;
+}
+
+function renderInvesting(): string {
+  const items = investingMemories();
+  return `
+    <div class="panel-screen investing-screen">
+      ${screenHeader("Investing", "memory-settings")}
+      <form id="investing-form" class="stack-form">
+        <div class="sync-grid">
+          <input id="holding-symbol" placeholder="Ticker or asset" />
+          <input id="holding-note" placeholder="Position, thesis, risk, or question" />
+        </div>
+        <button class="primary-wide orange" type="submit">Save to brain</button>
+      </form>
+      <div class="section-label">Portfolio brain · ${items.length}</div>
+      <div class="sent-list">
+        ${items.length ? items.map(renderChatItem).join("") : `<p class="empty-state">No investing memory yet.</p>`}
+      </div>
+    </div>
+  `;
+}
+
+function renderVault(): string {
+  const records = vaultRecords();
+  return `
+    <div class="panel-screen vault-screen">
+      ${screenHeader("Bank vault", "memory-settings")}
+      <p class="screen-subtitle">Secrets are encrypted in this browser before they touch storage. The brain only receives a locked pointer.</p>
+      <form id="vault-form" class="stack-form">
+        <input id="vault-passphrase" type="password" placeholder="Vault password" />
+        <input id="vault-label" placeholder="Label, e.g. bank login" />
+        <textarea id="vault-secret" placeholder="Secret to encrypt locally..."></textarea>
+        <button class="primary-wide orange" type="submit">Encrypt and save</button>
+      </form>
+      <div class="caption-line">${escapeHtml(vaultStatus)}</div>
+      ${revealedVault ? `<section class="agent-answer"><span>${escapeHtml(revealedVault.label)}</span><p>${escapeHtml(revealedVault.text)}</p></section>` : ""}
+      <div class="section-label">Vault items · ${records.length}</div>
+      <div class="tool-list">
+        ${
+          records.length
+            ? records.map((record) => `<button class="tool-row" type="button" data-vault-reveal="${escapeAttr(record.id)}"><span>${escapeHtml(record.label)}</span></button>`).join("")
+            : `<p class="empty-state">No encrypted vault items yet.</p>`
+        }
+      </div>
+    </div>
+  `;
+}
+
+function renderBackup(): string {
+  return `
+    <div class="panel-screen backup-screen">
+      ${screenHeader("Brain backup", "memory-settings")}
+      <section class="brief-card">
+        <div class="brief-head">
+          <span>Account</span>
+          <button type="button" data-screen="setup">Login</button>
+        </div>
+        <p>${escapeHtml(syncStatus)}</p>
+        <strong>${localMemories().length} brain item${localMemories().length === 1 ? "" : "s"}</strong>
+      </section>
+      <div class="button-pair">
+        <button id="backup-pull" type="button">Pull brain</button>
+        <button id="backup-push" type="button">Push brain</button>
+      </div>
+      <div class="tool-list backup-list">
+        ${["profiles", "brain_items", "vault_items", "vault_meta", "devices", "action_log"].map((table) => rowTool(table)).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderFloatingNav(): string {
+  return `
+    <div class="panel-screen floating-nav-screen">
+      ${screenHeader("Floating nav panel", "memory-settings")}
+      <section class="brief-card">
+        <div class="brief-head">
+          <span>${escapeHtml(platformLabel())}</span>
+          <button type="button" data-screen="operate">Operate</button>
+        </div>
+        <p>${escapeHtml(floatingNavCopy())}</p>
+        <strong>${escapeHtml(deviceBridgeStatus)}</strong>
+      </section>
+      <div class="tool-list">
+        ${["Home prompt", "Read this screen", "Pause agent", "Open brain", "Observe device"].map((tool) => rowTool(tool, tool === "Observe device" ? "operate" : "home")).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderModels(): string {
+  return `
+    <div class="panel-screen models-screen">
+      ${screenHeader("Models & spending", "memory-settings")}
+      <section class="setup-block model-inline">
+        <h3>${escapeHtml(providerLabel())}</h3>
+        <p>${escapeHtml(providerStatus)}</p>
+        <div class="chip-row provider-row">
+          ${providerOptions
+            .map(
+              (option) =>
+                `<button class="${option.id === selectedProvider ? "active" : ""}" data-provider="${option.id}" type="button">${escapeHtml(option.label)}</button>`
+            )
+            .join("")}
+        </div>
+        <div class="sync-grid">
+          <input id="provider-model" value="${escapeAttr(modelName)}" placeholder="${escapeAttr(defaultModelFor(selectedProvider))}" />
+          <input id="provider-key" type="password" value="${escapeAttr(providerApiKey)}" placeholder="API key" />
+        </div>
+        <div class="button-pair">
+          <button id="provider-save" type="button">Save model</button>
+          <button id="provider-test" type="button">Test model</button>
+        </div>
+      </section>
+      <div class="tool-list">
+        ${["Cloud key routing", "On-device model slot", "Daily cost notes", "Brain context reuse"].map((tool) => rowTool(tool)).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderPerApp(): string {
+  const personas = localMemories().filter((item) => item.tags.includes("persona"));
+  return `
+    <div class="panel-screen per-app-screen">
+      ${screenHeader("Per-app responses", "memory-settings")}
+      <form id="persona-form" class="stack-form">
+        <input id="persona-app" placeholder="App or person" />
+        <textarea id="persona-style" placeholder="How SlyOS should sound there..."></textarea>
+        <button class="primary-wide orange" type="submit">Save persona</button>
+      </form>
+      <div class="section-label">Personas · ${personas.length}</div>
+      <div class="tool-list">
+        ${personas.length ? personas.map((persona) => rowTool(persona.title, "memory")).join("") : `<p class="empty-state">No per-app persona saved yet.</p>`}
+      </div>
+    </div>
+  `;
+}
+
+function renderImports(): string {
+  return `
+    <div class="panel-screen imports-screen">
+      ${screenHeader("Import & voice", "memory-settings")}
+      <form id="history-import-form" class="stack-form">
+        <input id="history-files" type="file" multiple accept=".txt,.csv,.json,.md,.html,.zip" />
+        <textarea id="history-note" placeholder="Source or context, e.g. WhatsApp export with Daria..."></textarea>
+        <button class="primary-wide orange" type="submit">Import history</button>
+      </form>
+      <div class="tool-list">
+        ${["WhatsApp export", "LinkedIn archive", "Instagram export", "Telegram export", "Messenger export"].map((tool) => rowTool(tool)).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function operateCopy(): string {
+  if (nativePlatform === "ios") {
+    return "iPhone can plan through the brain, import/share into SlyOS, and hand tasks to Shortcuts; Apple blocks arbitrary whole-device click-through.";
+  }
+  return "Mac uses the localhost bridge for observe, app open, typing, clipboard, keys, and pointer primitives.";
+}
+
+function floatingNavCopy(): string {
+  if (nativePlatform === "macos") return "The SlyOS nav is fixed over the bottom of the full-window shell.";
+  if (nativePlatform === "ios") return "The SlyOS nav stays inside the app shell; system-wide overlays are blocked by iOS.";
+  return "The shared shell keeps the SlyOS nav in the same five-tab layout.";
+}
+
+function platformLabel(): string {
+  if (nativePlatform === "macos") return "macOS";
+  if (nativePlatform === "ios") return "iPhone";
+  return "Web";
+}
+
 function renderApps(): string {
   const apps: Array<{ label: string; screen: ShellScreen }> = [
     { label: "Setup", screen: "setup" },
     { label: "Memory", screen: "memory" },
     { label: "Now", screen: "now" },
+    { label: "Chat", screen: "chat" },
+    { label: "Operate device", screen: "operate" },
     { label: "Research", screen: "research" },
+    { label: "Cowork", screen: "cowork" },
+    { label: "Mission", screen: "mission" },
+    { label: "My network", screen: "network" },
     { label: "Look", screen: "look" },
     { label: "Expenses", screen: "expenses" },
+    { label: "Documents", screen: "documents" },
+    { label: "Import history", screen: "imports" },
+    { label: "Teach a skill", screen: "skill" },
+    { label: "Investing", screen: "investing" },
+    { label: "Bank vault", screen: "vault" },
+    { label: "Brain backup", screen: "backup" },
+    { label: "Models", screen: "models" },
+    { label: "Feature map", screen: "feature-parity" },
     { label: "Manual mode", screen: "manual" }
   ];
   return `
@@ -1003,6 +1582,80 @@ function wireEvents(): void {
     void runPrompt();
   });
 
+  document.querySelector("#chat-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void runChat();
+  });
+
+  document.querySelector("#operate-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    planOperatePrompt();
+  });
+
+  document.querySelector("#operate-observe")?.addEventListener("click", () => {
+    void observeDeviceFromPrompt();
+  });
+
+  document.querySelector("#operate-run")?.addEventListener("click", () => {
+    void runOperatePrimitive();
+  });
+
+  document.querySelector("#skill-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveSkill();
+  });
+
+  document.querySelector("#document-import-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void importDocumentFiles("document");
+  });
+
+  document.querySelector("#history-import-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void importDocumentFiles("history");
+  });
+
+  document.querySelector("#investing-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveInvestingMemory();
+  });
+
+  document.querySelector("#vault-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void saveVaultItem();
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-vault-reveal]").forEach((element) => {
+    element.addEventListener("click", () => {
+      void revealVaultItem(element.dataset.vaultReveal ?? "");
+    });
+  });
+
+  document.querySelector("#backup-pull")?.addEventListener("click", () => {
+    void syncAction(async () => {
+      if (!syncClient) throw new Error("Configure sync first.");
+      const remote = await syncClient.pullMemory();
+      for (const item of remote) memoryStore.upsert(item);
+      const settings = await syncClient.pullSettings();
+      for (const item of settings) memoryStore.setSetting(item.key, item.value);
+      syncStatus = `Pulled ${remote.length} brain item(s) and ${settings.length} setting(s).`;
+    });
+  });
+
+  document.querySelector("#backup-push")?.addEventListener("click", () => {
+    void syncAction(async () => {
+      if (!syncClient) throw new Error("Configure sync first.");
+      await syncClient.pushMemory(memoryStore.list());
+      await syncClient.pushSettings(memoryStore.listSettings());
+      syncStatus = "Pushed local brain.";
+    });
+  });
+
+  document.querySelector("#persona-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    savePersona();
+  });
+
   document.querySelector("#memory-search-form")?.addEventListener("submit", (event) => {
     event.preventDefault();
     void runMemorySearch();
@@ -1192,6 +1845,313 @@ function wireBrainCanvases(): void {
   });
 }
 
+async function runChat(): Promise<void> {
+  const input = document.querySelector<HTMLTextAreaElement>("#chat-input");
+  const text = input?.value.trim() ?? "";
+  if (!text) return;
+
+  memoryStore.add({
+    kind: "chat",
+    title: `You: ${text.slice(0, 56)}`,
+    body: text,
+    tags: ["chat", "brain"],
+    source: "chat"
+  });
+
+  if (!providerApiKey.trim()) {
+    agentAnswer = "Setup needs a model key before SlyOS can answer live.";
+    render();
+    return;
+  }
+
+  agentBusy = true;
+  render();
+  try {
+    const answer = await generateWithProvider({
+      provider: selectedProvider,
+      apiKey: providerApiKey,
+      model: modelName,
+      prompt: text,
+      memoryContext: buildMemoryContext()
+    });
+    memoryStore.add({
+      kind: "chat",
+      title: `SlyOS: ${text.slice(0, 56)}`,
+      body: answer,
+      tags: ["chat", "agent-response", "brain"],
+      source: providerLabel()
+    });
+  } catch (error) {
+    memoryStore.add({
+      kind: "chat",
+      title: "SlyOS chat error",
+      body: error instanceof Error ? error.message : String(error),
+      tags: ["chat", "error"],
+      source: providerLabel()
+    });
+  } finally {
+    agentBusy = false;
+    render();
+  }
+}
+
+function planOperatePrompt(): void {
+  const input = document.querySelector<HTMLTextAreaElement>("#operate-input");
+  operatePrompt = input?.value.trim() ?? "";
+  if (!operatePrompt) return;
+  lastPlan = planPrompt(operatePrompt);
+  operateStatus = "planned through the brain";
+  memoryStore.add({
+    kind: "screen",
+    title: `Operate: ${operatePrompt.slice(0, 60)}`,
+    body: `Planned device loop: ${lastPlan.summary}`,
+    tags: ["operate", "screen", "brain"],
+    source: platformLabel()
+  });
+  render();
+}
+
+async function runOperatePrimitive(): Promise<void> {
+  const input = document.querySelector<HTMLTextAreaElement>("#operate-input");
+  operatePrompt = input?.value.trim() || operatePrompt;
+  if (!operatePrompt) {
+    operateStatus = "write a device task first";
+    render();
+    return;
+  }
+
+  if (nativePlatform === "ios") {
+    operateStatus = "iOS cannot run whole-device click-through; use Shortcuts/App Intents handoff for the primitive.";
+    memoryStore.add({
+      kind: "screen",
+      title: `iOS operate handoff: ${operatePrompt.slice(0, 50)}`,
+      body: operateStatus,
+      tags: ["operate", "ios", "handoff"],
+      source: "iPhone"
+    });
+    render();
+    return;
+  }
+
+  await deviceAction(async () => {
+    const primitive = primitiveActionForPrompt(operatePrompt);
+    const before = await deviceFetch("/actions", {
+      method: "POST",
+      body: JSON.stringify({ type: "observe_screen" })
+    });
+    const result = await deviceFetch("/actions", {
+      method: "POST",
+      body: JSON.stringify(primitive)
+    });
+    await deviceFetch("/actions", {
+      method: "POST",
+      body: JSON.stringify({ type: "wait", ms: 500 })
+    }).catch(() => undefined);
+    const after = await deviceFetch("/actions", {
+      method: "POST",
+      body: JSON.stringify({ type: "observe_screen" })
+    });
+    operateStatus = `ran ${String(primitive.type)}`;
+    deviceBridgeObservation = `${describeDevicePayload(before)} -> ${describeDevicePayload(result)} -> ${describeDevicePayload(after)}`;
+    memoryStore.add({
+      kind: "screen",
+      title: `Ran primitive: ${String(primitive.type)}`,
+      body: `${operatePrompt}\n${deviceBridgeObservation}`,
+      tags: ["operate", "screen", "brain"],
+      source: platformLabel()
+    });
+  });
+}
+
+function primitiveActionForPrompt(prompt: string): Record<string, unknown> {
+  const lower = prompt.toLowerCase();
+  const url = prompt.match(/https?:\/\/[^\s"'<>]+/i)?.[0];
+  if (url) return { type: "open_url", url };
+
+  const coordinate = lower.match(/\b(?:click|tap)\D+(\d{2,4})\D+(\d{2,4})\b/);
+  if (coordinate) {
+    return {
+      type: "pointer_click",
+      x: Number(coordinate[1]),
+      y: Number(coordinate[2]),
+      button: "left",
+      clicks: 1
+    };
+  }
+
+  const quotedText = prompt.match(/\btype\s+["“](.+?)["”]/i)?.[1];
+  if (quotedText) return { type: "type_text", text: quotedText };
+
+  const app = prompt.match(/\bopen\s+([a-z][a-z ]{1,32})(?:$|\.|,| and |\s+then)/i)?.[1]?.trim();
+  if (app) return { type: "open_app", app: normalizeAppName(app) };
+
+  if (/\b(command|cmd)\s*\+\s*l\b/i.test(prompt)) return { type: "hotkey", keys: ["cmd", "l"] };
+  if (/\b(press|hit)\s+(enter|return)\b/i.test(prompt)) return { type: "key_press", key: "return", modifiers: [] };
+  if (/\bscroll\s+up\b/.test(lower)) return { type: "scroll", deltaY: -520 };
+  if (/\bscroll\b/.test(lower)) return { type: "scroll", deltaY: 520 };
+  return { type: "observe_screen" };
+}
+
+function normalizeAppName(app: string): string {
+  const key = app.toLowerCase().replace(/\s+/g, " ").trim();
+  const names: Record<string, string> = {
+    chrome: "Google Chrome",
+    "google chrome": "Google Chrome",
+    safari: "Safari",
+    xcode: "Xcode",
+    notes: "Notes",
+    finder: "Finder",
+    mail: "Mail",
+    calendar: "Calendar",
+    messages: "Messages",
+    terminal: "Terminal",
+    settings: "System Settings",
+    "system settings": "System Settings"
+  };
+  return names[key] ?? app;
+}
+
+function describeDevicePayload(payload: Record<string, any>): string {
+  const result = payload.result ?? payload;
+  if (result.opened) return `opened ${String(result.opened)}`;
+  if (result.typed) return `typed ${String(result.typed)} chars`;
+  if (result.clicked) return `clicked ${JSON.stringify(result.clicked)}`;
+  const app = result.frontmostApp?.app ? `front ${result.frontmostApp.app}` : "";
+  const shot = result.screenshot?.path ? `shot ${result.screenshot.path}` : "";
+  return [app, shot].filter(Boolean).join(" · ") || JSON.stringify(result).slice(0, 180);
+}
+
+function saveSkill(): void {
+  const name = document.querySelector<HTMLInputElement>("#skill-name")?.value.trim() ?? "";
+  const steps = document.querySelector<HTMLTextAreaElement>("#skill-steps")?.value.trim() ?? "";
+  if (!name || !steps) return;
+  memoryStore.add({
+    kind: "memory",
+    title: `Skill: ${name}`,
+    body: steps,
+    tags: ["skill", "operate", "brain"],
+    source: platformLabel()
+  });
+  render();
+}
+
+async function importDocumentFiles(mode: "document" | "history"): Promise<void> {
+  const input = document.querySelector<HTMLInputElement>(mode === "document" ? "#document-files" : "#history-files");
+  const note = document.querySelector<HTMLTextAreaElement>(mode === "document" ? "#document-note" : "#history-note")?.value.trim() ?? "";
+  const files = Array.from(input?.files ?? []);
+  if (!files.length && !note) return;
+
+  for (const file of files) {
+    const text = await readFileForBrain(file);
+    memoryStore.add({
+      kind: mode === "document" ? "document" : "chat",
+      title: file.name,
+      body: [note, text || `Imported file metadata: ${file.type || "unknown type"} · ${file.size} bytes`].filter(Boolean).join("\n\n"),
+      tags: mode === "document" ? ["document", "import", "brain"] : ["chat", "import", "history", "brain"],
+      source: mode === "document" ? "document import" : "history import"
+    });
+  }
+
+  if (!files.length && note) {
+    memoryStore.add({
+      kind: mode === "document" ? "document" : "chat",
+      title: mode === "document" ? "Document note" : "History note",
+      body: note,
+      tags: mode === "document" ? ["document", "brain"] : ["chat", "history", "brain"],
+      source: mode === "document" ? "document import" : "history import"
+    });
+  }
+  render();
+}
+
+async function readFileForBrain(file: File): Promise<string> {
+  const readable =
+    file.type.startsWith("text/") ||
+    /(\.txt|\.csv|\.json|\.md|\.html|\.xml)$/i.test(file.name);
+  if (!readable) return "";
+  return (await file.text()).slice(0, 80000);
+}
+
+function saveInvestingMemory(): void {
+  const symbol = document.querySelector<HTMLInputElement>("#holding-symbol")?.value.trim() ?? "";
+  const note = document.querySelector<HTMLInputElement>("#holding-note")?.value.trim() ?? "";
+  if (!symbol && !note) return;
+  memoryStore.add({
+    kind: "memory",
+    title: symbol ? `Investment: ${symbol.toUpperCase()}` : "Investment note",
+    body: note || symbol,
+    tags: ["investing", "brain"],
+    source: "investing"
+  });
+  render();
+}
+
+function savePersona(): void {
+  const app = document.querySelector<HTMLInputElement>("#persona-app")?.value.trim() ?? "";
+  const style = document.querySelector<HTMLTextAreaElement>("#persona-style")?.value.trim() ?? "";
+  if (!app || !style) return;
+  memoryStore.add({
+    kind: "profile",
+    title: `Persona: ${app}`,
+    body: style,
+    tags: ["persona", "profile", "brain"],
+    source: app
+  });
+  render();
+}
+
+async function saveVaultItem(): Promise<void> {
+  const passphrase = document.querySelector<HTMLInputElement>("#vault-passphrase")?.value ?? "";
+  const label = document.querySelector<HTMLInputElement>("#vault-label")?.value.trim() ?? "";
+  const secret = document.querySelector<HTMLTextAreaElement>("#vault-secret")?.value ?? "";
+  if (!passphrase || !label || !secret) {
+    vaultStatus = "vault password, label, and secret are required";
+    render();
+    return;
+  }
+  try {
+    const encrypted = await encryptText(secret, passphrase);
+    const record: VaultRecord = {
+      id: localId("vault"),
+      label,
+      ...encrypted,
+      updatedAt: new Date().toISOString()
+    };
+    saveVaultRecords([record, ...vaultRecords()]);
+    memoryStore.add({
+      kind: "vault",
+      title: `Vault: ${label}`,
+      body: "Vault item saved - locked.",
+      tags: ["vault", "brain"],
+      source: "vault"
+    });
+    revealedVault = null;
+    vaultStatus = "encrypted and saved locally";
+  } catch (error) {
+    vaultStatus = error instanceof Error ? error.message : String(error);
+  }
+  render();
+}
+
+async function revealVaultItem(id: string): Promise<void> {
+  const passphrase = document.querySelector<HTMLInputElement>("#vault-passphrase")?.value ?? "";
+  const record = vaultRecords().find((candidate) => candidate.id === id);
+  if (!record || !passphrase) {
+    vaultStatus = "enter the vault password first";
+    render();
+    return;
+  }
+  try {
+    const text = await decryptText(record, passphrase);
+    revealedVault = { label: record.label, text };
+    vaultStatus = "unlocked on this device";
+  } catch {
+    vaultStatus = "unlock failed";
+    revealedVault = null;
+  }
+  render();
+}
+
 async function runMemorySearch(seed?: string): Promise<void> {
   const input = document.querySelector<HTMLInputElement>("#memory-query");
   memoryQuery = (seed ?? input?.value ?? "").trim();
@@ -1369,6 +2329,63 @@ function saveProfileSettings(): void {
   profileVoice = document.querySelector<HTMLInputElement>("#profile-voice")?.value.trim() ?? profileVoice;
   window.localStorage.setItem("slyos:profileName", profileName);
   window.localStorage.setItem("slyos:profileVoice", profileVoice);
+}
+
+async function encryptText(text: string, passphrase: string): Promise<Pick<VaultRecord, "ciphertext" | "iv" | "salt">> {
+  if (!crypto.subtle) throw new Error("WebCrypto is not available in this runtime.");
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveVaultKey(passphrase, salt);
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: toArrayBuffer(iv) }, key, toArrayBuffer(new TextEncoder().encode(text)));
+  return {
+    ciphertext: bytesToBase64(new Uint8Array(ciphertext)),
+    iv: bytesToBase64(iv),
+    salt: bytesToBase64(salt)
+  };
+}
+
+async function decryptText(record: VaultRecord, passphrase: string): Promise<string> {
+  if (!crypto.subtle) throw new Error("WebCrypto is not available in this runtime.");
+  const salt = base64ToBytes(record.salt);
+  const iv = base64ToBytes(record.iv);
+  const key = await deriveVaultKey(passphrase, salt);
+  const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: toArrayBuffer(iv) }, key, toArrayBuffer(base64ToBytes(record.ciphertext)));
+  return new TextDecoder().decode(plaintext);
+}
+
+async function deriveVaultKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
+  const baseKey = await crypto.subtle.importKey("raw", toArrayBuffer(new TextEncoder().encode(passphrase)), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: toArrayBuffer(salt), iterations: 210000, hash: "SHA-256" },
+    baseKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
+function localId(prefix: string): string {
+  const random = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `${prefix}_${random}`;
 }
 
 function escapeHtml(value: string): string {

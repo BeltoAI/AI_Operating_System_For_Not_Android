@@ -10,7 +10,23 @@ The account/sync contract now matches the Android build in:
 
 ## Is the database already set up?
 
-No live cloud database is bundled with this repo.
+For the provided SlyOS project URL, the live probe passed on 2026-07-11:
+
+- `profiles` is reachable through the Data API.
+- `brain_items` is reachable through the Data API.
+- `vault_items` is reachable through the Data API.
+- `vault_meta` is reachable through the Data API.
+- Email/password auth and signups are enabled.
+
+Run this yourself with your current project values:
+
+```bash
+SUPABASE_URL=https://your-project-ref.supabase.co \
+SUPABASE_PUBLISHABLE_KEY=your-publishable-key \
+npm run db:probe
+```
+
+For new public users, no private cloud database is bundled with this repo.
 
 What is already done:
 

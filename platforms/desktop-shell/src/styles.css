@@ -50,6 +50,10 @@ input {
 
 textarea {
   letter-spacing: 0;
+  font: inherit;
+  border: 0;
+  outline: 0;
+  resize: vertical;
 }
 
 .os-stage {
@@ -511,7 +515,8 @@ textarea {
 .button-pair button,
 .memory-search button,
 .remember-form button,
-.chip-row button {
+.chip-row button,
+.stack-form button {
   border-radius: 999px;
   background: var(--accent);
   color: var(--elev);
@@ -630,6 +635,47 @@ textarea {
   display: grid;
 }
 
+.feature-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.feature-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  text-align: left;
+  background: var(--elev);
+  border-radius: 24px;
+  padding: 18px;
+}
+
+.feature-row strong,
+.feature-row small {
+  display: block;
+}
+
+.feature-row strong {
+  font-size: 21px;
+  font-weight: 600;
+}
+
+.feature-row small {
+  color: var(--faint);
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.feature-row b {
+  max-width: 145px;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: right;
+}
+
 .action-row {
   display: flex;
   justify-content: space-between;
@@ -682,7 +728,7 @@ textarea {
 .panel-screen {
   height: 100%;
   overflow: auto;
-  padding-bottom: 4px;
+  padding-bottom: 72px;
 }
 
 .screen-header {
@@ -766,6 +812,16 @@ textarea {
   align-items: center;
   gap: 14px;
   margin-top: 12px;
+}
+
+.operate-screen .button-pair {
+  gap: 8px;
+}
+
+.operate-screen .button-pair button {
+  padding: 11px 14px;
+  font-size: 16px;
+  white-space: nowrap;
 }
 
 .brief-head {
@@ -888,14 +944,31 @@ blockquote {
   margin: 18px 0 10px;
 }
 
+.stack-form {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0;
+}
+
 .memory-search input,
 .remember-form input,
-.sync-grid input {
+.sync-grid input,
+.stack-form input,
+.stack-form textarea {
   background: var(--elev);
   border-radius: 18px;
   color: var(--ink);
   padding: 15px 18px;
   font-size: 18px;
+}
+
+.stack-form textarea {
+  min-height: 118px;
+  line-height: 1.22;
+}
+
+.stack-form input[type="file"] {
+  color: var(--soft);
 }
 
 .memory-search input {
@@ -1546,7 +1619,8 @@ blockquote {
   .button-pair button,
   .memory-search button,
   .remember-form button,
-  .chip-row button {
+  .chip-row button,
+  .stack-form button {
     padding: 10px 14px;
     font-size: 16px;
   }
@@ -1641,7 +1715,9 @@ blockquote {
 
 .sync-grid input:focus,
 .memory-search input:focus,
-.remember-form input:focus {
+.remember-form input:focus,
+.stack-form input:focus,
+.stack-form textarea:focus {
   box-shadow: 0 0 0 2px rgba(232, 100, 44, 0.18);
 }
 

@@ -24,6 +24,8 @@ What works today:
 - Generated SlyOS app icons for iPhone, iPad, macOS, and the PWA manifest.
 - Installable PWA metadata, offline shell caching, and a web release artifact builder.
 - A real canvas-backed Brain graph built from local/synced memory, with drag rotate, wheel/pinch zoom, filters, recent memory questions, and node selection.
+- Android-shaped workflow screens for Chat, Operate device, Teach a skill, Documents, Imports, Investing, Bank vault, Brain backup, Models, Per-app responses, and public-docs feature parity.
+- A local WebCrypto AES-GCM vault screen that stores encrypted secrets locally and writes only locked pointers into the brain.
 - A localhost desktop device-agent bridge for macOS, Linux, and Windows actions.
 - Prompt-to-device control primitives: observe screen, front app, clipboard, click, type, hotkey, scroll, and wait.
 - Shared TypeScript agent contracts for memory, planning, actions, and sync.
@@ -203,10 +205,22 @@ http://localhost:5173/?screen=outbox
 http://localhost:5173/?screen=reconnect
 http://localhost:5173/?screen=memory
 http://localhost:5173/?screen=memory-settings
+http://localhost:5173/?screen=feature-parity
 http://localhost:5173/?screen=mission
 http://localhost:5173/?screen=network
 http://localhost:5173/?screen=research
 http://localhost:5173/?screen=cowork
+http://localhost:5173/?screen=chat
+http://localhost:5173/?screen=operate
+http://localhost:5173/?screen=skill
+http://localhost:5173/?screen=documents
+http://localhost:5173/?screen=investing
+http://localhost:5173/?screen=vault
+http://localhost:5173/?screen=backup
+http://localhost:5173/?screen=floating-nav
+http://localhost:5173/?screen=models
+http://localhost:5173/?screen=per-app
+http://localhost:5173/?screen=imports
 http://localhost:5173/?screen=voice
 http://localhost:5173/?screen=apps
 http://localhost:5173/?screen=setup
@@ -224,6 +238,7 @@ BADSCIENTIST/
     PARITY_MATRIX.md          What each OS can and cannot match
     ROADMAP.md                Build phases
     REPO_SETUP.md             Repo setup notes
+    SLYOS_PUBLIC_FEATURE_PARITY.md
   supabase/
     README.md                 Database setup guide
     schema.sql                Tables, grants, indexes, and RLS policies

@@ -205,7 +205,7 @@ Open `http://localhost:5173`, configure Supabase, then configure the local bridg
 
 ## 7. Latest Downloads
 
-Use the latest prerelease on GitHub:
+Use the latest release on GitHub:
 
 ```text
 https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases
