@@ -13,20 +13,28 @@ https://github.com/BeltoAI/Ai_Operating_System/releases/latest/download/SlyOS.ap
 macOS app:
 
 ```text
-https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.2/slyos-macos-app.zip
+https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.6/slyos-macos-app.zip
 ```
 
 Desktop control bridge for macOS, Linux, and Windows:
 
 ```text
-https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.2/slyos-desktop-agent.zip
+https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.6/slyos-desktop-agent.zip
 ```
 
 Web/PWA shell for iPhone, iPad, Linux, Windows, and browser testing:
 
 ```text
-https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.2/slyos-web-pwa.zip
+https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.6/slyos-web-pwa.zip
 ```
+
+iPhone development IPA for the currently provisioned test device only:
+
+```text
+https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.6/slyos-ios-dev.ipa
+```
+
+Do not present that IPA as a public iPhone installer. Its personal-team profile expires July 18, 2026 and only includes the provisioned test iPhone. Other users must build with their own Apple signing team until a TestFlight/App Store release exists.
 
 Latest release page:
 
@@ -42,9 +50,9 @@ https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/latest
   <p>Android is the deepest phone build. macOS is the native desktop launcher. iPhone supports a signed cabled development build plus the PWA install path; public iPhone downloads require TestFlight or the App Store.</p>
   <ul>
     <li><a href="https://github.com/BeltoAI/Ai_Operating_System/releases/latest/download/SlyOS.apk">Download Android APK</a></li>
-    <li><a href="https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.2/slyos-macos-app.zip">Download macOS app</a></li>
-    <li><a href="https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.2/slyos-desktop-agent.zip">Download desktop control bridge</a></li>
-    <li><a href="https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.2/slyos-web-pwa.zip">Download Web/PWA shell</a></li>
+    <li><a href="https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.6/slyos-macos-app.zip">Download macOS app</a></li>
+    <li><a href="https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.6/slyos-desktop-agent.zip">Download desktop control bridge</a></li>
+    <li><a href="https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.6/slyos-web-pwa.zip">Download Web/PWA shell</a></li>
   </ul>
 </section>
 ```
