@@ -7,6 +7,7 @@ const repoRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const distDir = join(repoRoot, "platforms/desktop-shell/dist");
 const nativeWebAppDir = join(repoRoot, "platforms/apple/SlyOSNative/Resources/WebApp");
 
+run("npm", ["run", "build", "-w", "@badscientist/agent-core"]);
 run("npm", ["run", "build", "-w", "@badscientist/desktop-shell", "--", "--base", "./"], {
   VITE_SUPABASE_URL: "",
   VITE_SUPABASE_PUBLISHABLE_KEY: ""

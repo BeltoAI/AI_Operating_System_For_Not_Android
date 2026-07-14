@@ -11,11 +11,14 @@
   },
   "dependencies": {
     "@badscientist/agent-core": "0.1.0",
-    "@supabase/supabase-js": "2.110.2"
+    "@fontsource/caveat": "^5.2.8",
+    "@fontsource/roboto": "^5.2.10",
+    "@material-design-icons/svg": "^0.14.15",
+    "@supabase/supabase-js": "2.110.2",
+    "pdfjs-dist": "^5.4.624"
   },
   "devDependencies": {
     "typescript": "7.0.2",
     "vite": "8.1.4"
   }
 }
-

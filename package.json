@@ -19,6 +19,7 @@
     "db:check": "node tools/supabase/check-readiness.mjs",
     "db:apply": "node tools/supabase/apply-schema.mjs",
     "db:probe": "node tools/supabase/probe-live.mjs",
+    "doctor": "node tools/diagnostics/doctor.mjs",
     "macos:app": "node tools/apple/build-macos-app.mjs",
     "release:all": "npm run release:web && npm run release:desktop-agent",
     "release:desktop-agent": "node tools/release/build-desktop-agent.mjs",
@@ -30,6 +31,7 @@
     "node": ">=22"
   },
   "devDependencies": {
+    "@yao-pkg/pkg": "^6.13.0",
     "typescript": "7.0.2",
     "vite": "8.1.4"
   },

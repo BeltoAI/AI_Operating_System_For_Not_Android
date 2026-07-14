@@ -14,7 +14,7 @@ https://github.com/BeltoAI/AI_Operating_System_For_Not_Android
 
 ## Read this first
 
-This repo is useful today, but it is not a finished App Store / desktop installer product yet.
+This repo contains working native development builds for macOS and iOS plus the shared web/PWA and desktop-agent sources. Public App Store, notarized macOS, Linux, and Windows distribution still require platform release credentials and packaging.
 
 What works today:
 
@@ -27,19 +27,20 @@ What works today:
 - Android-shaped workflow screens for Chat, Operate device, Teach a skill, Documents, Imports, Investing, Bank vault, Brain backup, Models, Per-app responses, and public-docs feature parity.
 - A local WebCrypto AES-GCM vault screen that stores encrypted secrets locally and writes only locked pointers into the brain.
 - A localhost desktop device-agent bridge for macOS, Linux, and Windows actions.
+- An in-app Diagnostics surface plus local JSONL/host logs for startup, sync, memory, provider, and device-control evidence.
 - Prompt-to-device control primitives: observe screen, front app, clipboard, click, type, hotkey, scroll, and wait.
 - Shared TypeScript agent contracts for memory, planning, actions, and sync.
 - A Supabase schema, migration, local config, readiness check, and DB apply script for optional cross-device memory and settings sync.
-- iOS SwiftUI/App Intents source scaffolding.
+- A native iOS SwiftUI/WebKit shell with App Intents, Shortcuts handoffs, camera/microphone bridges, contacts, calendar, reminders, files/imports, and Apple Foundation Models when available.
 - Platform folders for macOS, Linux, Windows, iOS, and Android reference notes.
 - Documentation for parity, roadmap, setup, and Android baseline limits.
 
-What does not exist yet:
+What is still platform-limited:
 
-- Public App Store/TestFlight iOS distribution. Cable install works with full Xcode, signing, and an available trusted iPhone.
+- Public App Store/TestFlight iOS distribution. Signed cable installation is implemented and tested; public distribution needs an Apple Developer release team.
 - Notarized macOS DMG/PKG installer.
 - Finished Linux or Windows native installers.
-- Full Android-level notification listener, launcher, overlay, or accessibility behavior on other OSes.
+- Full Android-level notification listener, launcher replacement, overlay, or AccessibilityService behavior on iOS. Apple does not expose equivalent APIs to third-party apps.
 
 Important: `localhost` is the web shell. The native Apple app wraps the same shell through WebKit and lives under `platforms/apple/SlyOSNative`.
 
@@ -73,6 +74,8 @@ Run checks:
 ```bash
 npm run typecheck
 npm run build
+npm run doctor
+npm run db:probe
 ```
 
 Build downloadable release artifacts:
@@ -90,7 +93,7 @@ release-artifacts/slyos-desktop-agent-<version>-<commit>.zip
 release-artifacts/slyos-macos-app-<version>-<commit>.zip
 ```
 
-The macOS app ZIP contains a signed local `SlyOS.app`. It is ad-hoc signed for local testing, not notarized for public Gatekeeper distribution.
+The macOS app ZIP contains an Apple Development-signed local `SlyOS.app`. It is suitable for local testing but is not notarized for public Gatekeeper distribution.
 
 The PWA ZIP remains the current browser/PWA install path. Host the `app/` folder inside it, then install it as a PWA from Safari on iPhone/iPad or Chrome/Edge on desktop.
 
@@ -98,11 +101,12 @@ The desktop-agent ZIP is the native-power bridge for macOS, Linux, and Windows. 
 
 ## Native Mac App
 
-Build and open the Mac app:
+Build, install, and open the Mac app:
 
 ```bash
 npm run macos:app
-open platforms/macos/build/SlyOS.app
+ditto platforms/macos/build/SlyOS.app /Applications/SlyOS.app
+open /Applications/SlyOS.app
 ```
 
 The app:
@@ -115,6 +119,8 @@ The app:
 - includes generated SlyOS icons and a bundled WebKit app shell.
 
 After UI edits, run `npm run macos:app` again.
+
+For observe-click-type control, open `Brain -> Settings -> Device permissions`, select `Request Mac access`, approve both `Screen Recording` and `Accessibility`, then quit and reopen SlyOS once. The app tests the real permission state and `Brain -> Settings -> Diagnostics` records the result. Install one canonical copy at `/Applications/SlyOS.app`; registering multiple unpacked copies with the same bundle identifier can create stale macOS permission records. See `docs/RUNTIME_DIAGNOSTICS.md`.
 
 ## Native iPhone App
 
@@ -180,7 +186,7 @@ Default bridge URL:
 http://127.0.0.1:4317
 ```
 
-The bridge gives desktop platforms controlled native capabilities that the browser cannot provide directly: open URL/app, screenshot where supported, list/write allowed files, and optional command execution when explicitly enabled.
+The bridge gives desktop platforms controlled native capabilities that the browser cannot provide directly: open URL/app, observe the active screen, accessibility-tree targeting, click/type/hotkey/scroll, clipboard, native reminders, Mail/Messages sends behind confirmation, local Ollama models, and read/write access inside allowlisted folders. Shell execution remains disabled unless explicitly enabled.
 
 Enable Android-style device takeover primitives:
 
@@ -192,7 +198,7 @@ npm run agent
 
 The takeover loop is documented in `docs/DEVICE_TAKEOVER.md`: observe the screen, execute one primitive action, wait, observe again, and stop before sends, destructive changes, money, credentials, account settings, or ambiguity.
 
-In the shell, open `Setup`, save the local bridge URL/token, then ask a prompt such as `open the active app and click through the setup`. When the plan includes device control, the Brain card exposes `Run device loop` to start the observe step through the local bridge.
+In the native Mac shell the bundled bridge is started automatically. Ask a prompt such as `open Notes and create a note called Launch plan`; ordinary reversible actions can execute immediately, while sends, destructive actions, money, credentials, and account/security changes remain confirmation-gated. The visual loop observes, acts in bounded batches, verifies the result, and replans for up to 32 observations.
 
 ## Open specific screens
 
@@ -205,6 +211,7 @@ http://localhost:5173/?screen=outbox
 http://localhost:5173/?screen=reconnect
 http://localhost:5173/?screen=memory
 http://localhost:5173/?screen=memory-settings
+http://localhost:5173/?screen=permissions
 http://localhost:5173/?screen=feature-parity
 http://localhost:5173/?screen=mission
 http://localhost:5173/?screen=network

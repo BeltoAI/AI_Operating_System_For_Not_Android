@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		4FDC06780FFD31C1CCB8F196 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 06CA4259AF17BC42696E92F0 /* Assets.xcassets */; };
 		61E977E28CADD240CC9245BD /* SlyOSNativeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B108DEA30512786707E86BD2 /* SlyOSNativeApp.swift */; };
+		65F4024A1F67BE1AB44C3C89 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = A67BBB0D28514D485DAE8889 /* LaunchScreen.storyboard */; };
 		91212BCE45E6E82B721FBFC7 /* WebApp in Resources */ = {isa = PBXBuildFile; fileRef = 4B7AEE275EE03C1AA61B79E0 /* WebApp */; };
 		9B011C2EDC9C3AA6FC010EC7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 06CA4259AF17BC42696E92F0 /* Assets.xcassets */; };
 		A1481DAB1888143FA897576F /* SlyOSNativeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B108DEA30512786707E86BD2 /* SlyOSNativeApp.swift */; };
@@ -20,15 +21,25 @@
 		4B7AEE275EE03C1AA61B79E0 /* WebApp */ = {isa = PBXFileReference; lastKnownFileType = folder; name = WebApp; path = Resources/WebApp; sourceTree = SOURCE_ROOT; };
 		6C4297A64E321051437841E8 /* SlyOS-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "SlyOS-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6D389F6D044891F01048E4E1 /* SlyOS-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SlyOS-macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A67BBB0D28514D485DAE8889 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		B108DEA30512786707E86BD2 /* SlyOSNativeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlyOSNativeApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
+		141B4744DDBDD6354B279BC6 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A67BBB0D28514D485DAE8889 /* LaunchScreen.storyboard */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 		6391F41EDF1E90988E7CF5F7 = {
 			isa = PBXGroup;
 			children = (
 				06CA4259AF17BC42696E92F0 /* Assets.xcassets */,
 				4B7AEE275EE03C1AA61B79E0 /* WebApp */,
+				141B4744DDBDD6354B279BC6 /* Resources */,
 				AFD8ADAF442C5A6D6FED1A43 /* Sources */,
 				66027CEBC44679452E7005D0 /* Products */,
 			);
@@ -144,6 +155,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4FDC06780FFD31C1CCB8F196 /* Assets.xcassets in Resources */,
+				65F4024A1F67BE1AB44C3C89 /* LaunchScreen.storyboard in Resources */,
 				91212BCE45E6E82B721FBFC7 /* WebApp in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -245,11 +257,21 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = SlyOS;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "SlyOS reads your calendar only when you ask about your schedule and writes events only after a confirmed request.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "SlyOS uses the camera when you open Look mode to identify, read, and remember what you point at.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "SlyOS searches your contacts only when a prompt needs a person, phone number, or email address.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SlyOS uses the microphone only when you choose voice input or a voice workflow.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "SlyOS reads photos you explicitly choose for Look, document, receipt, and memory workflows.";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "SlyOS accesses reminders only for reminder workflows you explicitly request.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SlyOS transcribes speech only after you tap the voice control.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UIViewControllerBasedStatusBarAppearance = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -329,11 +351,21 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = SlyOS;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "SlyOS reads your calendar only when you ask about your schedule and writes events only after a confirmed request.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "SlyOS uses the camera when you open Look mode to identify, read, and remember what you point at.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "SlyOS searches your contacts only when a prompt needs a person, phone number, or email address.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SlyOS uses the microphone only when you choose voice input or a voice workflow.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "SlyOS reads photos you explicitly choose for Look, document, receipt, and memory workflows.";
+				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "SlyOS accesses reminders only for reminder workflows you explicitly request.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SlyOS transcribes speech only after you tap the voice control.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
+				INFOPLIST_KEY_UIStatusBarHidden = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UIViewControllerBasedStatusBarAppearance = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

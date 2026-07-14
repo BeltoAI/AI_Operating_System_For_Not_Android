@@ -59,7 +59,7 @@ xcodebuild \
   -project platforms/apple/SlyOSNative/SlyOSNative.xcodeproj \
   -scheme SlyOS-iOS \
   -configuration Debug \
-  -destination 'generic/platform=iOS' \
+  -destination 'id=YOUR_COREDEVICE_ID' \
   DEVELOPMENT_TEAM=YOUR_TEAM_ID \
   CODE_SIGN_STYLE=Automatic \
   build
@@ -103,57 +103,38 @@ For Safari inspection:
 4. Open the PWA in Safari on the iPhone.
 5. Inspect it from Safari on the Mac.
 
+The free Apple personal-team profile expires after seven days. Rebuild and reinstall when it expires. A public download for arbitrary iPhones requires TestFlight or App Store distribution; a development `.ipa` is signed only for devices listed in its provisioning profile.
+
 ## 4. MacBook
 
-From this repo:
+Build the signed native app and install one canonical copy:
 
 ```bash
 cd /Users/emilshirokikh/Downloads/BADSCIENTIST
 npm install
-SLYOS_AGENT_TOKEN=choose-a-local-secret SLYOS_ENABLE_DEVICE_CONTROL=1 npm run agent
-```
-
-In a second terminal:
-
-```bash
-cd /Users/emilshirokikh/Downloads/BADSCIENTIST
-npm run dev
-```
-
-Open:
-
-```text
-http://localhost:5173
+npm run macos:app
+ditto platforms/macos/build/SlyOS.app /Applications/SlyOS.app
+open /Applications/SlyOS.app
 ```
 
 In SlyOS:
 
-1. Open Setup.
-2. Add Supabase URL/key/email/password.
-3. Configure and Sign in.
-4. Pull brain.
-5. Add the device bridge URL `http://127.0.0.1:4317`.
-6. Add the agent token.
-7. Check bridge.
-8. Prompt from Home with a screen/app/click/control task.
-9. Use Run device loop.
+1. Open `Brain -> Settings -> Account`, sign into the same Supabase account, and select `Pull brain`.
+2. Open `Brain -> Settings -> Device permissions`.
+3. Select `Request Mac access`.
+4. Approve Screen Recording and Accessibility for SlyOS in macOS Settings.
+5. Press `Cmd+Q`, reopen `/Applications/SlyOS.app`, and select `Refresh permissions`.
+6. Prompt from Home with a screen/app/click/control task. The native app starts its bundled local bridge automatically.
 
-For stronger macOS pointer automation:
-
-```bash
-brew install cliclick
-```
-
-Then grant Terminal or your runner Accessibility and Screen Recording permissions in macOS Settings.
+Do not keep multiple unpacked SlyOS `.app` copies registered. macOS privacy grants are tied to the signed app identity, and duplicate registered copies can leave stale-looking toggles. Use `/Applications/SlyOS.app` as the canonical launcher.
 
 Close and reopen the Mac launcher quickly:
 
 ```bash
-pkill -x SlyOS
-open /Users/emilshirokikh/Downloads/BADSCIENTIST/platforms/macos/build/SlyOS.app
+open /Applications/SlyOS.app
 ```
 
-You can also focus the SlyOS window and press `Cmd+Q`.
+Press `Cmd+Q` to close it. Reopen it with Spotlight (`Cmd+Space`, type `SlyOS`, Return) or `open /Applications/SlyOS.app`.
 
 ## 5. Linux PC
 
@@ -217,9 +198,11 @@ Download:
 - `slyos-desktop-agent-*.zip`
 - `slyos-macos-app-*.zip`
 
+Local release builds are written under `release-artifacts/`. A cabled iOS development `.ipa` can also be created there, but it is not a public download: its embedded personal-team profile only runs on provisioned devices and expires after seven days.
+
 ## 8. Current Limits
 
 - iOS full-device click-through is blocked by Apple sandboxing; use native in-app flows, App Intents/Shortcuts/handoff, camera/imports, and explicit share sheets.
-- Public `.ipa`, `.dmg`, Linux packages, and Windows installers are not finished yet.
+- The cabled iOS development build and signed local Mac app work. Public App Store/TestFlight, notarized `.dmg`, Linux packages, and Windows installers are not finished yet.
 - The default Supabase URL/key is publishable and safe to ship, but the service-role key must never be committed.
 - Desktop takeover requires explicit local opt-in with `SLYOS_ENABLE_DEVICE_CONTROL=1`.

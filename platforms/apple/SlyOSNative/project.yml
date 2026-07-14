@@ -17,6 +17,7 @@ targets:
       - path: Sources
       - path: Resources/WebApp
         type: folder
+      - path: Resources/LaunchScreen.storyboard
       - path: Assets.xcassets
     settings:
       base:
@@ -28,7 +29,17 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UILaunchStoryboardName: LaunchScreen
+        INFOPLIST_KEY_UIStatusBarHidden: YES
+        INFOPLIST_KEY_UIViewControllerBasedStatusBarAppearance: NO
+        INFOPLIST_KEY_UIRequiresFullScreen: YES
+        INFOPLIST_KEY_NSCameraUsageDescription: SlyOS uses the camera when you open Look mode to identify, read, and remember what you point at.
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: SlyOS uses the microphone only when you choose voice input or a voice workflow.
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: SlyOS transcribes speech only after you tap the voice control.
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: SlyOS reads photos you explicitly choose for Look, document, receipt, and memory workflows.
+        INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription: SlyOS reads your calendar only when you ask about your schedule and writes events only after a confirmed request.
+        INFOPLIST_KEY_NSContactsUsageDescription: SlyOS searches your contacts only when a prompt needs a person, phone number, or email address.
+        INFOPLIST_KEY_NSRemindersFullAccessUsageDescription: SlyOS accesses reminders only for reminder workflows you explicitly request.
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         CODE_SIGN_STYLE: Automatic

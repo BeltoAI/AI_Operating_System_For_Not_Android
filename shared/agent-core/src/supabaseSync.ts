@@ -6,6 +6,12 @@ export interface SupabaseSyncConfig {
   publishableKey: string;
 }
 
+export interface SyncedVaultEnvelope {
+  cipherBlob: string;
+  salt: string;
+  updatedAt: number;
+}
+
 export interface BrainSyncClient {
   signInWithOtp(email: string): Promise<void>;
   signUpWithPassword(email: string, password: string): Promise<void>;
@@ -16,6 +22,8 @@ export interface BrainSyncClient {
   pullMemory(limit?: number): Promise<MemoryItem[]>;
   pushSettings(settings: SettingsItem[]): Promise<void>;
   pullSettings(): Promise<SettingsItem[]>;
+  pushVault(envelope: SyncedVaultEnvelope): Promise<void>;
+  pullVault(): Promise<SyncedVaultEnvelope | null>;
 }
 
 export function createBrainSyncClient(config: SupabaseSyncConfig): BrainSyncClient {
@@ -61,21 +69,22 @@ class SupabaseBrainSync implements BrainSyncClient {
   async pushMemory(items: MemoryItem[]): Promise<void> {
     const userId = await this.requireUser();
     if (!items.length) return;
-    const rows = items.map((item) => ({
+    const rows = items.filter((item) => item.kind !== "vault").map((item) => ({
       user_id: userId,
       kind: item.kind,
       client_id: item.id,
       title: item.title,
-      body: item.kind === "vault" ? "Encrypted vault item synced. Unlock on a trusted device." : item.body,
+      body: item.body,
       data: {
         tags: item.tags,
         source: item.source,
         createdAt: item.createdAt,
-        originalBody: item.kind === "vault" ? item.body : undefined
+        ...(item.kind === "profile" && item.id === "about" ? { owner: item.title } : {})
       },
       updated_at: toEpochMs(item.updatedAt),
       deleted: false
     }));
+    if (!rows.length) return;
     const { error } = await this.client.from("brain_items").upsert(rows, { onConflict: "user_id,kind,client_id" });
     if (error) throw error;
   }
@@ -91,16 +100,22 @@ class SupabaseBrainSync implements BrainSyncClient {
       .order("updated_at", { ascending: false })
       .limit(limit);
     if (error) throw error;
-    return (data ?? []).map((row) => ({
-      id: row.client_id,
-      kind: row.kind,
-      title: row.title,
-      body: row.kind === "vault" ? "Encrypted vault item synced. Unlock on a trusted device." : (row.body ?? ""),
-      tags: row.data?.tags ?? [],
-      source: row.data?.source ?? "supabase",
-      createdAt: row.data?.createdAt ?? row.created_at,
-      updatedAt: fromEpochMs(row.updated_at)
-    })) as MemoryItem[];
+    return (data ?? []).map((row) => {
+      const androidProfile = row.kind === "profile" && row.client_id === "about";
+      const androidChat = row.kind === "chat" && String(row.client_id).startsWith("chat:");
+      return {
+        id: row.client_id,
+        kind: row.kind,
+        title: androidProfile && typeof row.data?.owner === "string" && row.data.owner.trim()
+          ? row.data.owner.trim()
+          : row.title,
+        body: row.kind === "vault" ? "Encrypted vault item synced. Unlock on a trusted device." : (row.body ?? ""),
+        tags: row.data?.tags ?? (androidProfile ? ["profile", "android-profile", "brain"] : androidChat ? ["chat", "android-chat", "brain"] : []),
+        source: row.data?.source ?? (androidProfile || androidChat ? "Android" : "supabase"),
+        createdAt: row.data?.createdAt ?? row.created_at,
+        updatedAt: fromEpochMs(row.updated_at)
+      };
+    }) as MemoryItem[];
   }
 
   async pushSettings(settings: SettingsItem[]): Promise<void> {
@@ -135,6 +150,35 @@ class SupabaseBrainSync implements BrainSyncClient {
       value: row.data?.value ?? safeJson(row.body),
       updatedAt: fromEpochMs(row.updated_at)
     }));
+  }
+
+  async pushVault(envelope: SyncedVaultEnvelope): Promise<void> {
+    const userId = await this.requireUser();
+    const { error } = await this.client.from("brain_items").upsert({
+      user_id: userId,
+      kind: "vault",
+      client_id: "bank",
+      title: "Bank vault",
+      body: envelope.cipherBlob,
+      data: { salt: envelope.salt },
+      updated_at: envelope.updatedAt,
+      deleted: false
+    }, { onConflict: "user_id,kind,client_id" });
+    if (error) throw error;
+  }
+
+  async pullVault(): Promise<SyncedVaultEnvelope | null> {
+    const userId = await this.requireUser();
+    const { data, error } = await this.client
+      .from("brain_items")
+      .select("body, data, updated_at, deleted")
+      .eq("user_id", userId)
+      .eq("kind", "vault")
+      .eq("client_id", "bank")
+      .maybeSingle();
+    if (error) throw error;
+    if (!data || data.deleted || typeof data.body !== "string" || typeof data.data?.salt !== "string") return null;
+    return { cipherBlob: data.body, salt: data.data.salt, updatedAt: Number(data.updated_at) || 0 };
   }
 
   private async requireUser(): Promise<string> {

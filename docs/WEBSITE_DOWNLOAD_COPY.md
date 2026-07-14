@@ -39,7 +39,7 @@ https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/latest
 ```html
 <section>
   <h2>Download SlyOS</h2>
-  <p>Android is the deepest phone build. macOS is the native desktop launcher. iPhone currently supports the native cabled developer build and the PWA install path.</p>
+  <p>Android is the deepest phone build. macOS is the native desktop launcher. iPhone supports a signed cabled development build plus the PWA install path; public iPhone downloads require TestFlight or the App Store.</p>
   <ul>
     <li><a href="https://github.com/BeltoAI/Ai_Operating_System/releases/latest/download/SlyOS.apk">Download Android APK</a></li>
     <li><a href="https://github.com/BeltoAI/AI_Operating_System_For_Not_Android/releases/download/v0.1.0-brain.2/slyos-macos-app.zip">Download macOS app</a></li>
@@ -55,11 +55,10 @@ macOS:
 
 1. Download `slyos-macos-app.zip`.
 2. Unzip it.
-3. Open `SlyOS.app`.
-4. If macOS blocks the unsigned local build, Control-click the app, click Open, then Open again.
-5. Open Setup.
-6. Create/sign into the Supabase account.
-7. Click Pull brain.
+3. Move `SlyOS.app` to `/Applications` and open it from there.
+4. Open Setup and sign into the Supabase account, then select Pull brain.
+5. Open Brain -> Settings -> Device permissions and select Request Mac access.
+6. Approve Screen Recording and Accessibility, quit SlyOS once, and reopen it.
 
 Desktop control bridge:
 
@@ -83,10 +82,10 @@ iPhone native developer build:
 
 1. Install full Xcode.
 2. Clone the BADSCIENTIST repo.
-3. Run `npm install && npm run apple:xcode`.
+3. Run `npm install && npm run macos:app && npm run apple:xcode` so the latest shared UI is synced into the native project.
 4. Open `platforms/apple/SlyOSNative/SlyOSNative.xcodeproj`.
 5. Select `SlyOS-iOS`, pick the connected iPhone, set signing, and press Run.
 
 Current iOS limit:
 
-Third-party iOS apps cannot take over the entire phone or click through other apps like Android Accessibility can. The iPhone build uses the same SlyOS brain/UI inside the app, plus future App Intents, Shortcuts, share sheets, camera/imports, and explicit handoff.
+Third-party iOS apps cannot take over the entire phone or click through other apps like Android Accessibility can. The iPhone build uses the same SlyOS brain/UI inside the app plus implemented App Intents, Shortcuts handoffs, native contacts/calendar/reminders, camera/imports, and explicit compose/share surfaces.

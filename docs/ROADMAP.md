@@ -33,9 +33,9 @@ Target macOS, Linux, and Windows together.
 - screenshot/screen context capture
 - explicit confirmation for sends, posts, payments, deletes, and external actions
 
-Current implementation: Vite/TypeScript shell that mirrors the main Android SlyOS surfaces: Boot, Lock, Home, Now, Sent for you, Reconnect, Memory, Memory settings, Mission, My network, Research, Cowork, Voice/listening, Apps, Setup, Look, Expenses, and Manual Mode. Native packaging and OS adapters are next.
+Current implementation: the shared Vite/TypeScript shell mirrors the main Android SlyOS surfaces and runs inside a native full-screen macOS WebKit host. The signed Mac app bundles a localhost device agent, persistent diagnostics, allowlisted file tools, native reminders, Mail/Messages confirmation flows, local Ollama fallback, and a bounded observe-act-verify-replan loop.
 
-Current release path: `npm run release:all` builds a downloadable PWA ZIP plus a desktop-agent ZIP. The PWA is installable through Safari/Chrome/Edge today; the desktop-agent gives macOS/Linux/Windows a local OS-action bridge. Native desktop installers require Rust/Tauri or another native wrapper.
+Current release path: `npm run release:all` builds a downloadable PWA ZIP plus a desktop-agent ZIP, and `npm run release:macos-app` builds a signed local Mac app ZIP. Public macOS distribution still needs hardened release signing and notarization. Linux and Windows currently use the web shell plus desktop agent while native installers remain pending.
 
 Current operation path: `npm run agent` starts a localhost desktop bridge for macOS/Linux/Windows actions that browsers cannot perform directly. The bridge requires a bearer token, restricts file writes to allowed roots, and keeps shell execution disabled by default.
 
@@ -53,7 +53,7 @@ Current takeover path: `SLYOS_ENABLE_DEVICE_CONTROL=1 npm run agent` enables obs
 - memory search
 - explicit action drafts
 
-Current implementation: SwiftUI/App Intents source scaffold. Xcode project wiring is next.
+Current implementation: generated Xcode project, native SwiftUI/WebKit shell, full-screen launch storyboard, App Intents, Shortcuts handoffs, camera/microphone and file bridges, native contacts/calendar/reminders, Supabase account sync, and Apple Foundation Models when the device supports them. Signed cabled installation has been verified on an iPhone 15 Pro Max.
 
 ## Phase 4: Cross-platform sync and website
 
@@ -63,13 +63,14 @@ Current implementation: SwiftUI/App Intents source scaffold. Xcode project wirin
 - website download pages
 - platform-specific install instructions
 
-Current implementation: Supabase schema, migration, config, browser sync adapter, readiness checker, DB apply script, and live client probe exist. Each user still needs to create their own Supabase project, run `supabase/schema.sql` or `npm run db:apply` with `SUPABASE_DB_URL`, enable email/password auth, and configure a publishable client key.
+Current implementation: Supabase schema, Android-compatible migration, config, browser sync adapter, readiness checker, DB apply script, and live client probe exist. The configured SlyOS project exposes `profiles`, `brain_items`, `vault_items`, and `vault_meta` with RLS and email/password auth. Users can also bring their own Supabase project by applying `supabase/schema.sql`.
 
 ## Current native blockers
 
-- Full Xcode is not selected on this Mac, so `.ipa`/TestFlight archives cannot be built here yet.
-- Rust/Tauri are not installed, so native macOS/Linux/Windows installers cannot be built here yet.
-- Supabase credentials are not present, so a live hosted DB cannot be provisioned from this checkout yet.
+- iOS does not permit arbitrary cross-app screen observation and tapping. SlyOS uses App Intents, Shortcuts, native APIs, URL handoffs, and explicit compose/share surfaces instead.
+- Public iOS distribution needs an Apple Developer release team and TestFlight/App Store signing. Personal-team cable builds expire after seven days and only run on provisioned devices.
+- Public macOS distribution needs hardened release signing and notarization. The local Apple Development-signed app is installable on this Mac.
+- Linux and Windows still need native installer packaging and OS-specific end-to-end device testing.
 
 ## Phase 5: Parity hardening
 

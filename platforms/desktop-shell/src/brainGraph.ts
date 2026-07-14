@@ -29,6 +29,7 @@ export interface BrainCanvasOptions {
   mode: "memory" | "voice";
   selectedKey?: string | null;
   filterType?: BrainNodeType | null;
+  highlightKeys?: string[];
   query?: string;
   onSelect?: (key: string | null) => void;
 }
@@ -78,6 +79,7 @@ export function buildBrainGraph(items: MemoryItem[]): BrainGraph {
   const ordered = [...items]
     .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
     .slice(0, 320);
+  const latestByCluster = new Map<string, number>();
 
   for (const item of ordered) {
     const type = nodeTypeFor(item);
@@ -98,12 +100,24 @@ export function buildBrainGraph(items: MemoryItem[]): BrainGraph {
       y: 0
     };
     nodes.push(node);
-    edges.push({ a: 0, b: node.id });
+    const cluster = graphCluster(item, type);
+    edges.push({ a: latestByCluster.get(cluster) ?? 0, b: node.id });
+    latestByCluster.set(cluster, node.id);
   }
 
   layout(nodes, edges);
   addSynapses(nodes, edges);
   return { nodes, edges };
+}
+
+function graphCluster(item: MemoryItem, type: BrainNodeType): string {
+  if (item.tags.includes("home-conversation")) return "conversation:home";
+  if (item.tags.includes("checklist") || type === "task") return "tasks";
+  if (item.tags.includes("paper") || type === "paper") return "papers";
+  if (item.tags.includes("network") || type === "network") return "network";
+  if (type === "person") return `people:${(item.source || "people").toLowerCase()}`;
+  const source = (item.source || sourceFor(item) || type).toLowerCase().replace(/\s+/g, "-");
+  return `${type}:${source}`;
 }
 
 export function findBrainNode(graph: BrainGraph, key: string | null | undefined): BrainNode | null {
@@ -123,6 +137,9 @@ export function wireBrainCanvas(canvas: HTMLCanvasElement, graph: BrainGraph, op
   let lastY = 0;
   let moved = false;
   const startedAt = performance.now();
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const frameInterval = options.mode === "voice" ? 1000 / 30 : 1000 / 15;
+  let lastFrameAt = 0;
 
   const resize = () => {
     const rect = canvas.getBoundingClientRect();
@@ -133,13 +150,16 @@ export function wireBrainCanvas(canvas: HTMLCanvasElement, graph: BrainGraph, op
       canvas.width = width;
       canvas.height = height;
     }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return dpr;
   };
 
-  const draw = () => {
+  const draw = (now = performance.now()) => {
     if (!canvas.isConnected) return;
-    resize();
-    const elapsed = performance.now() - startedAt;
+    const dpr = resize();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const elapsed = now - startedAt;
     const spinDuration = options.mode === "voice" ? 46000 : 90000;
     const yaw = userYaw + (elapsed / spinDuration) * Math.PI * 2;
     render(ctx, canvas, graph, {
@@ -149,7 +169,15 @@ export function wireBrainCanvas(canvas: HTMLCanvasElement, graph: BrainGraph, op
       zoom,
       elapsed
     });
-    window.requestAnimationFrame(draw);
+  };
+
+  const animate = (now: number) => {
+    if (!canvas.isConnected) return;
+    if (now - lastFrameAt >= frameInterval) {
+      lastFrameAt = now;
+      draw(now);
+    }
+    window.requestAnimationFrame(animate);
   };
 
   canvas.addEventListener("pointerdown", (event) => {
@@ -169,6 +197,7 @@ export function wireBrainCanvas(canvas: HTMLCanvasElement, graph: BrainGraph, op
     tilt = clamp(tilt - dy * 0.006, -1.25, 1.25);
     lastX = event.clientX;
     lastY = event.clientY;
+    if (reducedMotion) draw();
   });
 
   canvas.addEventListener("pointerup", (event) => {
@@ -187,11 +216,13 @@ export function wireBrainCanvas(canvas: HTMLCanvasElement, graph: BrainGraph, op
     (event) => {
       event.preventDefault();
       zoom = clamp(zoom * (event.deltaY > 0 ? 0.92 : 1.08), 0.52, 3.2);
+      if (reducedMotion) draw();
     },
     { passive: false }
   );
 
   draw();
+  if (!reducedMotion) window.requestAnimationFrame(animate);
 }
 
 function render(
@@ -203,17 +234,13 @@ function render(
   const rect = canvas.getBoundingClientRect();
   const width = rect.width;
   const height = rect.height;
-  ctx.clearRect(0, 0, width, height);
-
   const dark = options.mode === "voice";
+  const memoryDark = options.mode === "memory" && document.documentElement.dataset.theme === "dark";
   if (dark) {
-    const glow = ctx.createRadialGradient(width * 0.5, height * 0.58, 0, width * 0.5, height * 0.58, width * 0.52);
-    glow.addColorStop(0, "rgba(232,100,44,0.18)");
-    glow.addColorStop(0.38, "rgba(232,100,44,0.05)");
-    glow.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = "#030302";
     ctx.fillRect(0, 0, width, height);
-    ctx.fillStyle = glow;
+  } else {
+    ctx.fillStyle = memoryDark ? "#171411" : "#f6f1e7";
     ctx.fillRect(0, 0, width, height);
   }
 
@@ -222,6 +249,10 @@ function render(
   const projected = projectAll(graph, width, height, options.yaw, options.tilt, options.zoom, options.mode);
   const selected = options.selectedKey ? graph.nodes.find((node) => node.key === options.selectedKey) : null;
   const related = selected ? new Set(graph.edges.filter((edge) => edge.a === selected.id || edge.b === selected.id).flatMap((edge) => [edge.a, edge.b])) : null;
+  const pathIds = (options.highlightKeys ?? [])
+    .map((key) => graph.nodes.find((node) => node.key === key)?.id)
+    .filter((id): id is number => typeof id === "number");
+  const pathSet = new Set(pathIds);
   const terms = (options.query ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 2);
   const sparseMemoryGraph = options.mode === "memory" && graph.nodes.length < 8;
 
@@ -230,13 +261,56 @@ function render(
     const b = projected[edge.b];
     if (!a || !b) continue;
     const hot = selected ? edge.a === selected.id || edge.b === selected.id : false;
-    const alpha = hot ? 0.28 : sparseMemoryGraph ? 0.006 : selected || options.filterType ? 0.035 : dark ? 0.04 : 0.052;
-    ctx.strokeStyle = dark ? `rgba(232,100,44,${hot ? 0.26 : alpha})` : `rgba(26,23,20,${alpha})`;
-    ctx.lineWidth = hot ? 1 : 0.55;
+    const alpha = hot ? 0.35 : selected || options.filterType ? 0.05 : dark ? 0.06 : sparseMemoryGraph ? 0.06 : 0.1;
+    ctx.strokeStyle = dark ? `rgba(232,100,44,${hot ? 0.3 : alpha})` : memoryDark ? `rgba(184,174,158,${alpha})` : `rgba(26,23,20,${alpha})`;
+    ctx.lineWidth = hot ? 1.4 : dark ? 0.7 : 0.8;
     line(ctx, a.x, a.y, b.x, b.y);
   }
 
-  const sparkCount = sparseMemoryGraph ? 0 : Math.min(12, graph.edges.length);
+  if (options.mode === "memory" && options.filterType) {
+    const filtered = graph.nodes.filter((node) => node.type === options.filterType);
+    const drawn = new Set<string>();
+    for (const node of filtered) {
+      const nearest = filtered
+        .filter((candidate) => candidate.id !== node.id)
+        .map((candidate) => ({ candidate, distance: Math.hypot(candidate.x - node.x, candidate.y - node.y) }))
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, 2);
+      for (const { candidate } of nearest) {
+        const key = node.id < candidate.id ? `${node.id}:${candidate.id}` : `${candidate.id}:${node.id}`;
+        if (drawn.has(key)) continue;
+        drawn.add(key);
+        const a = projected[node.id];
+        const b = projected[candidate.id];
+        if (!a || !b) continue;
+        ctx.strokeStyle = memoryDark ? "rgba(232,100,44,0.18)" : "rgba(232,100,44,0.22)";
+        ctx.lineWidth = 0.9;
+        line(ctx, a.x, a.y, b.x, b.y);
+      }
+    }
+  }
+
+  if (options.mode === "memory" && pathIds.length > 1) {
+    for (let index = 0; index < pathIds.length - 1; index += 1) {
+      const a = projected[pathIds[index]!];
+      const b = projected[pathIds[index + 1]!];
+      if (!a || !b) continue;
+      ctx.strokeStyle = "rgba(232,100,44,0.72)";
+      ctx.lineWidth = 2.5;
+      line(ctx, a.x, a.y, b.x, b.y);
+    }
+    const phase = (options.elapsed % 1400) / 1400;
+    const segmentFloat = phase * (pathIds.length - 1);
+    const segment = Math.min(pathIds.length - 2, Math.floor(segmentFloat));
+    const segmentPhase = segmentFloat - segment;
+    const a = projected[pathIds[segment]!];
+    const b = projected[pathIds[segment + 1]!];
+    if (a && b) {
+      circle(ctx, a.x + (b.x - a.x) * segmentPhase, a.y + (b.y - a.y) * segmentPhase, 2.4, "#e8642c", 0.96);
+    }
+  }
+
+  const sparkCount = options.mode === "voice" ? Math.min(12, graph.edges.length) : 0;
   const edgeSeed = Math.floor(options.elapsed / (options.mode === "voice" ? 1150 : 1400));
   const flow = ((options.elapsed % (options.mode === "voice" ? 2200 : 1400)) / (options.mode === "voice" ? 2200 : 1400) + 1) % 1;
   for (let index = 0; index < sparkCount; index += 1) {
@@ -257,34 +331,30 @@ function render(
     if (!pos) continue;
     const matchesQuery =
       !terms.length || terms.some((term) => `${node.label} ${node.content} ${node.source}`.toLowerCase().includes(term));
+    const inPath = pathSet.has(node.id);
     const dim =
       (options.filterType && node.type !== "hub" && node.type !== options.filterType) ||
-      (related && !related.has(node.id)) ||
-      (!matchesQuery && node.type !== "hub");
+      (related && !related.has(node.id) && !inPath) ||
+      (!matchesQuery && node.type !== "hub" && !inPath);
     const selectedNode = node.key === options.selectedKey;
-    const radius = (options.mode === "voice" ? 1.7 : 1.45) + node.strength * (options.mode === "voice" ? 4.15 : 3.45);
+    const radius = (options.mode === "voice" ? 2.5 : 4) + node.strength * (options.mode === "voice" ? 6 : 7);
     const r = radius * pos.depth;
-    const color = selectedNode || node.type === "hub" ? "#e8642c" : nodeColor(node);
+    const color = selectedNode || inPath || node.type === "hub" ? "#e8642c" : nodeColor(node);
     const alpha = dim ? 0.14 : clamp(0.45 + pos.depth * 0.55, 0.3, 1);
     circle(ctx, pos.x, pos.y, r, color, alpha);
-    ctx.strokeStyle = dark ? `rgba(244,239,230,${0.08 * alpha})` : `rgba(26,23,20,${0.12 * alpha})`;
-    ctx.lineWidth = selectedNode ? 1.5 : 0.65;
+    ctx.strokeStyle = dark || memoryDark ? `rgba(244,239,230,${0.08 * alpha})` : `rgba(26,23,20,${0.12 * alpha})`;
+    ctx.lineWidth = selectedNode || inPath ? 1.5 : 0.65;
     ctx.beginPath();
-    ctx.arc(pos.x, pos.y, selectedNode ? r + 4 : r, 0, Math.PI * 2);
+    ctx.arc(pos.x, pos.y, selectedNode || inPath ? r + 4 : r, 0, Math.PI * 2);
     ctx.stroke();
-    if ((selectedNode || node.type === "hub" || options.zoom > 1.65) && options.mode !== "voice") {
-      ctx.fillStyle = "rgba(92,84,75,0.82)";
-      ctx.font = "12px -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif";
+    if (options.mode !== "voice" && (node.type === "hub" || selectedNode || inPath || options.zoom > 1.4)) {
+      ctx.fillStyle = memoryDark ? "rgba(244,239,230,0.72)" : "rgba(92,84,75,0.82)";
+      ctx.font = node.type === "hub"
+        ? "22px Caveat, 'Segoe Script', cursive"
+        : "12px -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(trimLabel(node.label, 24), pos.x, pos.y + r + 14);
+      ctx.fillText(trimLabel(node.label, node.type === "hub" ? 32 : 24), pos.x, pos.y + r + (node.type === "hub" ? 22 : 14));
     }
-  }
-
-  if (options.mode === "memory") {
-    ctx.fillStyle = "rgba(26,23,20,0.28)";
-    ctx.font = "22px Caveat, 'Segoe Script', cursive";
-    ctx.textAlign = "center";
-    ctx.fillText("SlyOS", width / 2, height / 2 + 8);
   }
 }
 
@@ -324,25 +394,39 @@ function projectAll(
   zoom: number,
   mode: "memory" | "voice"
 ): Array<{ x: number; y: number; depth: number } | undefined> {
-  const rawExt = percentile(graph.nodes.map((node) => Math.max(Math.abs(node.x), Math.abs(node.y))), mode === "voice" ? 0.84 : 0.72);
-  const minExt = mode === "voice" ? 260 : graph.nodes.length < 12 ? 520 : 1;
+  const extentPercentile = mode === "voice" ? 0.72 : 0.88;
+  const rawExt = percentile(graph.nodes.map((node) => Math.hypot(node.x, node.y)), extentPercentile);
+  const minExt = mode === "voice" ? 260 : 1;
   const ext = Math.max(minExt, rawExt);
-  const scale = ((Math.min(width, height) * (mode === "voice" ? 0.5 : 0.36)) / Math.max(1, ext)) * zoom;
+  const radius = mode === "voice" ? Math.min(width * 0.54, height * 0.48) : Math.min(width * 0.46, height * 0.43);
+  const scale = (radius / Math.max(1, ext + (mode === "memory" ? 18 : 0))) * zoom;
   const cx = width / 2;
   const cy = height * (mode === "voice" ? 0.54 : 0.52);
-  return graph.nodes.map((node) => project(node, cx, cy, scale, yaw, tilt));
+  return graph.nodes.map((node) => project(node, cx, cy, scale, yaw, tilt, mode === "memory" ? ext : null));
 }
 
-function project(node: BrainNode, cx: number, cy: number, scale: number, yaw: number, tilt: number): { x: number; y: number; depth: number } {
+function project(
+  node: BrainNode,
+  cx: number,
+  cy: number,
+  scale: number,
+  yaw: number,
+  tilt: number,
+  radialLimit: number | null
+): { x: number; y: number; depth: number } {
+  const radial = Math.hypot(node.x, node.y);
+  const fit = radialLimit && radial > radialLimit ? radialLimit / radial : 1;
+  const sourceX = node.x * fit;
+  const sourceY = node.y * fit;
   const z = depthZ(node.id);
   const ca = Math.cos(yaw);
   const sa = Math.sin(yaw);
-  const x2 = node.x * ca - z * sa;
-  const z2 = node.x * sa + z * ca;
+  const x2 = sourceX * ca - z * sa;
+  const z2 = sourceX * sa + z * ca;
   const ct = Math.cos(tilt);
   const st = Math.sin(tilt);
-  const y2 = node.y * ct - z2 * st;
-  const z3 = node.y * st + z2 * ct;
+  const y2 = sourceY * ct - z2 * st;
+  const z3 = sourceY * st + z2 * ct;
   const focal = 1100;
   const depth = clamp(focal / (focal - z3), 0.45, 1.9);
   return { x: cx + x2 * scale * depth, y: cy + y2 * scale * depth, depth };
@@ -408,8 +492,8 @@ function layout(nodes: BrainNode[], edges: BrainEdge[]): void {
 }
 
 function addSynapses(nodes: BrainNode[], edges: BrainEdge[]): void {
-  if (nodes.length < 14) return;
   const ids = nodes.filter((node) => node.type !== "hub").map((node) => node.id);
+  if (ids.length < 3) return;
   const seen = new Set<string>(edges.map((edge) => `${Math.min(edge.a, edge.b)}:${Math.max(edge.a, edge.b)}`));
   for (const id of ids) {
     const a = nodes[id];
@@ -454,6 +538,7 @@ function sourceFor(item: MemoryItem): string {
 }
 
 function depthZ(id: number): number {
+  if (id === 0) return 0;
   const hash = (id * 374761393 + 668265263) | 0;
   return ((hash & 0x7fffffff) % 640) - 320;
 }
