@@ -15,9 +15,17 @@
     "@fontsource/roboto": "^5.2.10",
     "@material-design-icons/svg": "^0.14.15",
     "@supabase/supabase-js": "2.110.2",
-    "pdfjs-dist": "^5.4.624"
+    "docx": "^9.7.1",
+    "fast-xml-parser": "^5.10.0",
+    "fflate": "^0.8.3",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.624",
+    "pptxgenjs": "^4.0.1",
+    "sql.js": "^1.14.1",
+    "write-excel-file": "^4.1.1"
   },
   "devDependencies": {
+    "@types/sql.js": "^1.4.11",
     "typescript": "7.0.2",
     "vite": "8.1.4"
   }

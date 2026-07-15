@@ -28,13 +28,23 @@ import {
   wireBrainCanvas
 } from "./brainGraph";
 import { wireSlyOrbitCanvas } from "./slyOrbit";
+import { wireBusyPerimeterCanvas } from "./busyPerimeter";
+import type { AndroidBackupImport } from "./androidBackupImport";
 import { POWER_CATALOG, type PowerType } from "./powerCatalog";
+import {
+  blobToBase64,
+  buildArtifact,
+  type ArtifactKind,
+  type ArtifactSlide,
+  type ArtifactSpec
+} from "./artifactFiles";
 import "@fontsource/roboto/latin-300.css";
 import "@fontsource/roboto/latin-400.css";
 import "@fontsource/roboto/latin-500.css";
 import "@fontsource/roboto/latin-700.css";
 import "@fontsource/caveat/latin-500.css";
 import appsIcon from "@material-design-icons/svg/filled/apps.svg?raw";
+import attachFileIcon from "@material-design-icons/svg/filled/attach_file.svg?raw";
 import arrowBackIcon from "@material-design-icons/svg/filled/arrow_back.svg?raw";
 import boltIcon from "@material-design-icons/svg/filled/bolt.svg?raw";
 import homeIcon from "@material-design-icons/svg/filled/home.svg?raw";
@@ -50,6 +60,7 @@ import "./styles.css";
 
 const materialIcons = {
   apps: appsIcon,
+  attachFile: attachFileIcon,
   arrowBack: arrowBackIcon,
   bolt: boltIcon,
   home: homeIcon,
@@ -434,6 +445,9 @@ type DeviceSequence = DevicePrimitive[];
 type HomeRoute =
   | "answer"
   | "device"
+  | "navigation"
+  | "music"
+  | "artifact"
   | "calendar"
   | "native_read"
   | "outbound"
@@ -513,6 +527,10 @@ let devicePermissionStatus: DevicePermissionStatus = {
   automation: null
 };
 let deviceBridgeObservation = "";
+let deviceBatteryLevel: number | null = null;
+let deviceBatteryCharging = false;
+let deviceStatusLoading = false;
+let deviceStatusCheckedAt = 0;
 let operatePrompt = "";
 let operateStatus = "device loop idle";
 let skillStatus = "";
@@ -546,6 +564,8 @@ let localModelChecking = false;
 let agentAnswer = "";
 let agentBusy = false;
 let nowDigest = "";
+let nowBriefHidden = false;
+let homeGreetingShown = false;
 let homeChecklistVisible = false;
 let missionStatus = "";
 let missionRunning = false;
@@ -631,6 +651,7 @@ const missionKey = "slyos:mission";
 const missionProspectsKey = "slyos:missionProspects";
 const researchPapersKey = "slyos:researchPapers";
 const coworkFilesKey = "slyos:coworkFiles";
+const homeAttachmentsKey = "slyos:homeAttachments";
 const coworkChatsKey = "slyos:coworkChats";
 const expensesKey = "slyos:expenses";
 const jobApplicationsKey = "slyos:jobApplications";
@@ -642,6 +663,8 @@ const powersKey = "slyos:powers";
 const diagnosticsKey = "slyos:diagnostics";
 const reflexSkillsKey = "slyos:reflexSkills";
 const syncedVaultKey = "slyos:syncedVaultEnvelope";
+const androidCloudArchiveHashKey = "slyos:androidCloudArchiveHash:v2";
+let homeAttachmentIds = readJsonStorage<string[]>(homeAttachmentsKey, []).filter((id) => typeof id === "string").slice(0, 8);
 const syncedStructuredKeys = new Set([
   outboxKey,
   nowTasksKey,
@@ -653,6 +676,7 @@ const syncedStructuredKeys = new Set([
   missionProspectsKey,
   researchPapersKey,
   coworkFilesKey,
+  homeAttachmentsKey,
   coworkChatsKey,
   expensesKey,
   jobApplicationsKey,
@@ -1017,7 +1041,7 @@ async function pullRemoteBrain(reason: string): Promise<void> {
   syncBusy = true;
   recordDiagnostic("sync", "info", `Pull started (${reason}).`);
   try {
-    const remote = await syncClient.pullMemory(1000);
+    const remote = await syncClient.pullMemory(5000);
     memoryStore.upsertMany(remote);
     const settings = await syncClient.pullSettings();
     for (const item of settings) memoryStore.setSetting(item.key, item.value);
@@ -1025,8 +1049,15 @@ async function pullRemoteBrain(reason: string): Promise<void> {
     if (remoteVault && remoteVault.updatedAt > (syncedVaultEnvelope()?.updatedAt ?? 0)) {
       window.localStorage.setItem(syncedVaultKey, JSON.stringify(remoteVault));
     }
+    let androidArchiveSummary = "";
+    try {
+      androidArchiveSummary = await pullAndroidCloudArchive();
+    } catch (error) {
+      const message = `Full Android archive could not be imported: ${error instanceof Error ? error.message : String(error)}`;
+      recordDiagnostic("sync", "error", message);
+    }
     applySyncedSettingsToRuntime(remote);
-    syncStatus = `Pulled ${remote.length} brain item(s), ${settings.length} setting(s)${remoteVault ? ", and the encrypted vault" : ""}.`;
+    syncStatus = `Pulled ${remote.length} brain item(s), ${settings.length} setting(s)${remoteVault ? ", and the encrypted vault" : ""}${androidArchiveSummary ? `, plus ${androidArchiveSummary}` : ""}.`;
     recordDiagnostic("sync", "ok", syncStatus);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1036,6 +1067,24 @@ async function pullRemoteBrain(reason: string): Promise<void> {
   } finally {
     syncBusy = false;
   }
+}
+
+async function pullAndroidCloudArchive(): Promise<string> {
+  if (!syncClient) return "";
+  const archive = await syncClient.pullAndroidBrainArchive();
+  if (!archive) return "";
+  const bytes = new Uint8Array(await archive.arrayBuffer());
+  const digestBytes = new Uint8Array(await crypto.subtle.digest("SHA-256", toArrayBuffer(bytes)));
+  const digest = bytesToBase64(digestBytes);
+  if (window.localStorage.getItem(androidCloudArchiveHashKey) === digest) return "";
+
+  const { importAndroidBackup } = await import("./androidBackupImport");
+  const imported = await importAndroidBackup(new Blob([toArrayBuffer(bytes)], { type: "application/zip" }));
+  const summary = mergeAndroidBackup(imported);
+  window.localStorage.setItem(androidCloudArchiveHashKey, digest);
+  recordDiagnostic("sync", imported.report.warnings.length ? "error" : "ok", `Android cloud archive imported. ${summary}`);
+  scheduleBrainSync("android-cloud-archive");
+  return `${imported.memories.length} full-archive Android item(s)`;
 }
 
 async function pushRemoteBrain(reason: string): Promise<void> {
@@ -1466,6 +1515,61 @@ function coworkFiles(): CoworkFileRecord[] {
 
 function saveCoworkFiles(files: CoworkFileRecord[]): void {
   writeJsonStorage(coworkFilesKey, files.filter(isCoworkFile).slice(0, 200));
+}
+
+function homeAttachments(): CoworkFileRecord[] {
+  const byId = new Map(coworkFiles().map((file) => [file.id, file]));
+  const files = homeAttachmentIds.map((id) => byId.get(id)).filter((file): file is CoworkFileRecord => Boolean(file));
+  if (files.length !== homeAttachmentIds.length) saveHomeAttachmentIds(files.map((file) => file.id));
+  return files;
+}
+
+function saveHomeAttachmentIds(ids: string[]): void {
+  homeAttachmentIds = Array.from(new Set(ids)).slice(0, 8);
+  writeJsonStorage(homeAttachmentsKey, homeAttachmentIds);
+}
+
+async function attachHomeFiles(files: FileList | null): Promise<void> {
+  if (!files?.length) return;
+  const attached: CoworkFileRecord[] = [];
+  for (const source of Array.from(files).slice(0, 8)) {
+    const content = await readFileForBrain(source);
+    if (!content.trim()) {
+      agentAnswer = `SlyOS could not read ${source.name}. Use Look for images, or attach a text-based PDF, TXT, MD, CSV, JSON, HTML, DOCX, or PPTX file.`;
+      continue;
+    }
+    const now = new Date().toISOString();
+    const name = sanitizeFileName(source.name);
+    const existing = coworkFiles().find((file) => file.name.toLowerCase() === name.toLowerCase());
+    const record: CoworkFileRecord = {
+      id: existing?.id ?? localId("file"),
+      name,
+      kind: coworkFileKind(name),
+      content: content.slice(0, 240000),
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now
+    };
+    saveCoworkFiles([record, ...coworkFiles().filter((file) => file.id !== record.id)]);
+    memoryStore.add({
+      kind: "document",
+      title: `Attached: ${record.name}`,
+      body: record.content.slice(0, 80000),
+      tags: ["attachment", "document", "home", "brain"],
+      source: platformLabel()
+    });
+    attached.push(record);
+  }
+  if (attached.length) {
+    saveHomeAttachmentIds([...attached.map((file) => file.id), ...homeAttachmentIds]);
+    agentAnswer = `${attached.length} file${attached.length === 1 ? " is" : "s are"} open in the brain for follow-up prompts.`;
+    scheduleBrainSync("home-attachment");
+  }
+  render();
+}
+
+function removeHomeAttachment(id: string): void {
+  saveHomeAttachmentIds(homeAttachmentIds.filter((item) => item !== id));
+  render();
 }
 
 function isCoworkFile(value: unknown): value is CoworkFileRecord {
@@ -2783,6 +2887,179 @@ function inferExpenseCategory(text: string): string {
   return "General";
 }
 
+interface ArtifactRequest {
+  kind: ArtifactKind;
+  topic: string;
+}
+
+function extractArtifactRequest(prompt: string): ArtifactRequest | null {
+  if (!/\b(create|make|write|draft|build|put together|prepare|generate)\b/i.test(prompt)) return null;
+  if (/\b(email|post|tweet|research paper|whitepaper|app|code|script)\b/i.test(prompt)) return null;
+  const kind: ArtifactKind | null = /\b(pdf)\b/i.test(prompt)
+    ? "pdf"
+    : /\b(spreadsheet|workbook|xlsx|excel(?: sheet)?|csv tracker|budget sheet)\b/i.test(prompt)
+      ? "spreadsheet"
+      : /\b(presentation|slide deck|slides|powerpoint|pptx|deck)\b/i.test(prompt)
+        ? "presentation"
+        : /\b(document|docx|word document|letter|report|memo|brief)\b/i.test(prompt)
+          ? "document"
+          : null;
+  if (!kind) return null;
+  const topic = cleanCommandSubject(
+    prompt.replace(
+      /\b(create|make|write|draft|build|put together|prepare|generate|me|a|an|the|pdf|spreadsheet|workbook|xlsx|excel|sheet|csv|tracker|budget|presentation|slide|slides|deck|powerpoint|pptx|document|docx|word|letter|report|memo|brief|about|on|for)\b/gi,
+      " "
+    )
+  );
+  return { kind, topic: topic || cleanCommandSubject(prompt) };
+}
+
+function extractNavigationRequest(prompt: string): { destination: string; stop: string } | null {
+  if (/https?:\/\//i.test(prompt) || /\b(?:website|site|page|browser)\b/i.test(prompt)) return null;
+  const match =
+    prompt.match(/\b(?:navigate|directions?|route|take me|drive|walk)\s+(?:me\s+)?(?:to\s+)?(.+)$/i) ||
+    prompt.match(/\bhow (?:do|can) i get to\s+(.+)$/i);
+  const raw = cleanCommandSubject(match?.[1] ?? "");
+  if (!raw) return null;
+  const parts = raw.split(/\s+(?:via|with (?:a )?stop at|stopping at)\s+/i);
+  return { destination: cleanCommandSubject(parts[0] ?? ""), stop: cleanCommandSubject(parts.slice(1).join(" via ")) };
+}
+
+function extractMusicRequest(prompt: string): string {
+  const match = prompt.match(/^\s*(?:play|listen to|put on)\s+(.+?)(?:\s+on\s+spotify)?[.!?]?\s*$/i);
+  if (!match?.[1]) return "";
+  const query = cleanCommandSubject(match[1].replace(/\s+on\s+spotify$/i, ""));
+  if (!query || /\b(?:a game|the video|this file|this recording)\b/i.test(query)) return "";
+  return query;
+}
+
+async function runSemanticActionWorkflow(request: string): Promise<boolean> {
+  const navigation = extractNavigationRequest(request);
+  if (navigation) {
+    const url = new URL("https://www.google.com/maps/dir/");
+    url.searchParams.set("api", "1");
+    url.searchParams.set("destination", navigation.destination);
+    url.searchParams.set("travelmode", /\bwalk/i.test(request) ? "walking" : /\btransit/i.test(request) ? "transit" : "driving");
+    if (navigation.stop) url.searchParams.set("waypoints", navigation.stop);
+    const result = await executeDevicePrimitive(request, { type: "open_url", url: url.toString() }, "home");
+    agentAnswer = `Opening Maps to ${navigation.destination}${navigation.stop ? ` via ${navigation.stop}` : ""}. ${result}`;
+    return true;
+  }
+
+  const music = extractMusicRequest(request);
+  if (music) {
+    const url = `https://open.spotify.com/search/${encodeURIComponent(music)}`;
+    const result = await executeDevicePrimitive(request, { type: "open_url", url }, "home");
+    agentAnswer = `Opening Spotify for “${music}”. ${result}`;
+    return true;
+  }
+
+  const artifact = extractArtifactRequest(request);
+  if (artifact) {
+    agentAnswer = await createArtifactFromPrompt(request, artifact);
+    return true;
+  }
+  return false;
+}
+
+async function createArtifactFromPrompt(prompt: string, request: ArtifactRequest): Promise<string> {
+  if (!hasTextModel()) throw new Error("Add a cloud model key or enable an on-device text model before SlyOS creates a finished file.");
+  const formatInstruction = request.kind === "spreadsheet"
+    ? "Return rows as a two-dimensional array of strings, with a useful header row. content may be a short description."
+    : request.kind === "presentation"
+      ? "Return slides as an array of 4-12 objects with string title and body. Use newline-separated bullets in body."
+      : "Return the complete finished file text in content. Use concise markdown headings where useful.";
+  const parsed = await generateJsonWithProvider<Record<string, unknown>>({
+    provider: selectedProvider,
+    apiKey: providerApiKey,
+    model: modelName,
+    maxOutputTokens: 8000,
+    memoryContext: buildMemoryContext(prompt),
+    prompt: [
+      `Create the actual content for a ${request.kind} requested by the user.`,
+      "Return strict JSON only with keys title, content, rows, slides.",
+      formatInstruction,
+      "Ground the result in the supplied SlyOS brain context when relevant. Do not claim facts that are not in the request or context.",
+      `User request: ${prompt}`
+    ].join("\n\n")
+  });
+  const title = cleanCommandSubject(typeof parsed.title === "string" ? parsed.title : request.topic).slice(0, 80) || "SlyOS Document";
+  const content = typeof parsed.content === "string" ? parsed.content.trim() : "";
+  const rows = Array.isArray(parsed.rows)
+    ? parsed.rows.slice(0, 1000).map((row) => Array.isArray(row) ? row.slice(0, 80).map((cell) => String(cell ?? "").slice(0, 4000)) : []).filter((row) => row.length)
+    : [];
+  const slides: ArtifactSlide[] = Array.isArray(parsed.slides)
+    ? parsed.slides.slice(0, 40).flatMap((slide) => {
+        if (!slide || typeof slide !== "object") return [];
+        const item = slide as Record<string, unknown>;
+        return [{ title: String(item.title ?? "").slice(0, 240), body: String(item.body ?? "").slice(0, 8000) }];
+      }).filter((slide) => slide.title || slide.body)
+    : [];
+  if ((request.kind === "spreadsheet" && !rows.length) || (request.kind === "presentation" && !slides.length) || ((request.kind === "document" || request.kind === "pdf") && !content)) {
+    throw new Error(`The brain did not return valid ${request.kind} content. Nothing was written.`);
+  }
+  const spec: ArtifactSpec = { kind: request.kind, title, content, rows, slides };
+  const generated = await buildArtifact(spec);
+  const destination = await deliverArtifact(generated);
+  const summary = content || rows.slice(0, 20).map((row) => row.join(" | ")).join("\n") || slides.map((slide) => `${slide.title}\n${slide.body}`).join("\n\n");
+  memoryStore.add({
+    kind: "document",
+    title: `${request.kind}: ${title}`,
+    body: `${summary.slice(0, 80000)}\n\nArtifact: ${generated.name}\nDestination: ${destination}`,
+    tags: [request.kind, "artifact", "cowork", "brain"],
+    source: platformLabel()
+  });
+  recordOutbox({
+    title: `Created ${generated.name}`,
+    target: destination,
+    channel: "Cowork",
+    body: generated.name,
+    why: "generated from the Home prompt and SlyOS brain as a real native file",
+    status: "done"
+  });
+  return `Created ${generated.name}. ${destination}`;
+}
+
+async function deliverArtifact(artifact: { name: string; mimeType: string; blob: Blob }): Promise<string> {
+  if (nativePlatform === "macos") {
+    const capabilities = await deviceFetch("/capabilities");
+    const roots = Array.isArray(capabilities.capabilities?.allowedRoots)
+      ? capabilities.capabilities.allowedRoots.filter((item: unknown): item is string => typeof item === "string")
+      : [];
+    const root = roots.find((item: string) => /(?:^|\/)Downloads\/?$/i.test(item)) ?? roots[0];
+    if (!root) throw new Error("The Mac bridge has no writable Downloads, Documents, or Desktop folder configured.");
+    const path = `${root.replace(/\/$/, "")}/SlyOS/${sanitizeFileName(artifact.name)}`;
+    const payload = await deviceFetch("/actions", {
+      method: "POST",
+      body: JSON.stringify({
+        type: "write_file_base64",
+        path,
+        base64: await blobToBase64(artifact.blob),
+        overwrite: true
+      })
+    });
+    const writtenPath = String(payload.result?.path ?? path);
+    await deviceFetch("/actions", { method: "POST", body: JSON.stringify({ type: "open_file", path: writtenPath }) });
+    return `Saved to ${writtenPath} and opened it.`;
+  }
+  if (nativePlatform === "ios") {
+    const result = await runIosDevicePrimitive({
+      type: "export_file",
+      name: artifact.name,
+      mimeType: artifact.mimeType,
+      base64: await blobToBase64(artifact.blob)
+    });
+    return result.message || `Created ${artifact.name}; choose where to save it in Files.`;
+  }
+  const url = URL.createObjectURL(artifact.blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = artifact.name;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return "The download started.";
+}
+
 async function runLocalWorkflow(request: string): Promise<boolean> {
   const lower = request.toLowerCase();
 
@@ -3538,7 +3815,8 @@ function buildMemoryContext(query = ""): string {
   const conversation = homeConversation()
     .slice(-10)
     .map((turn) => `Recent ${turn.role}: ${turn.body}`);
-  return [...profile, ...missionContext, ...powerInstructions, ...conversation, ...memories]
+  const attachments = homeAttachments().map((file) => `Open attachment - ${file.name}:\n${file.content.slice(0, 12000)}`);
+  return [...profile, ...missionContext, ...powerInstructions, ...attachments, ...conversation, ...memories]
     .join("\n")
     .slice(0, 28_000);
 }
@@ -3547,6 +3825,7 @@ function navigate(next: ShellScreen): void {
   if (screen === "look" && next !== "look") stopLookCamera();
   if (screen === "voice" && next !== "voice") stopVoiceListening();
   if (next !== "manual") agentPaused = false;
+  if (next === "now" && screen !== "now") nowBriefHidden = false;
   screen = next;
   const params = new URLSearchParams(window.location.search);
   params.set("screen", screen);
@@ -3586,8 +3865,7 @@ function renderShell(): void {
           ${renderScreen()}
         </div>
         ${shouldShowNav(screen) ? renderBottomNav() : ""}
-        ${agentBusy ? renderEdgeShimmer() : ""}
-        <div class="busy-dog" aria-hidden="true"><span></span></div>
+        ${agentBusy ? renderBusyPerimeter() : ""}
       </section>
     </main>
   `;
@@ -3755,9 +4033,12 @@ function renderLock(): string {
 
 function renderHome(): string {
   const blockers = setupBlockers();
-  const conversation = homeConversation().slice(-4);
+  const attachments = homeAttachments();
   const statusLeft = new Date().toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
-  const statusRight = agentBusy ? "thinking" : blockers.length ? `${blockers.length} setup` : "ready";
+  const statusRight = deviceBatteryLevel === null
+    ? agentBusy ? "thinking" : ""
+    : `${deviceBatteryLevel}%${deviceBatteryCharging ? " ·" : ""}`;
+  if (!deviceStatusLoading && Date.now() - deviceStatusCheckedAt > 30_000) queueMicrotask(() => void refreshDeviceStatus());
   const owner = firstName(profileName);
   if (!installedAppsAttempted && !installedAppsLoading && nativePlatform !== "ios") {
     queueMicrotask(() => void loadInstalledApps());
@@ -3770,6 +4051,8 @@ function renderHome(): string {
         .slice(0, 3)
     : [];
   for (const app of appMatches) queueMicrotask(() => void loadInstalledAppIcon(app));
+  const greetingClass = homeGreetingShown ? "" : " animate";
+  homeGreetingShown = true;
   return `
     <div class="home-screen">
       <div class="home-status">
@@ -3778,18 +4061,26 @@ function renderHome(): string {
       </div>
       ${blockers.length ? `<button class="setup-warning home-permission" type="button" data-screen="setup">${escapeHtml(blockers[0] ?? "Open setup")}</button>` : ""}
       <div class="home-spacer" aria-hidden="true"></div>
-      <div class="home-greeting">
+      <div class="home-greeting${greetingClass}">
         <div class="prompt-title">what should happen${owner && owner !== "there" ? `, ${escapeHtml(owner)}` : ""}?</div>
         <span></span>
       </div>
       ${appMatches.length ? `<div class="home-app-matches">${appMatches.map(renderHomeAppMatch).join("")}</div>` : ""}
-      ${conversation.length ? `<div class="home-conversation" aria-live="polite">${conversation.map(renderHomeTurn).join("")}</div>` : ""}
       <form id="prompt-form" class="ask-row">
         <input id="prompt-input" value="${escapeAttr(promptText)}" autocomplete="off" placeholder="ask me anything…" />
+        <button class="attach-button" type="button" data-home-attach aria-label="Attach a file">${materialIcon("attachFile")}</button>
         <button class="camera-button" type="button" data-screen="look" aria-label="Look">${materialIcon("photoCamera")}</button>
-        <button class="send-button" type="submit">${agentBusy ? "Run" : "Send"}</button>
+        <button class="send-button" type="submit" ${!promptText.trim() || agentBusy ? "disabled" : ""}>Send</button>
       </form>
-      ${agentBusy ? `<section class="agent-answer thinking-answer">${renderSlyOrbit(34)}<p>thinking…</p></section>` : conversation.length ? "" : agentAnswer ? `<section class="agent-answer"><span>SlyOS</span><p>${escapeHtml(agentAnswer)}</p></section>` : ""}
+      <input class="sr-only" id="home-attachment-input" type="file" multiple accept=".pdf,.txt,.md,.csv,.json,.html,.htm,.docx,.pptx,text/*,application/pdf,application/json" />
+      ${attachments.length ? `<div class="home-attachments">${attachments.map((file) => `<span><b>${escapeHtml(file.name)}</b><button type="button" data-remove-home-attachment="${escapeAttr(file.id)}" aria-label="Remove ${escapeAttr(file.name)}">×</button></span>`).join("")}</div>` : ""}
+      ${agentBusy ? `<section class="agent-answer thinking-answer">${renderSlyOrbit(34)}<p>thinking…</p></section>` : agentAnswer ? `
+        <div class="swipe-shell home-answer-shell">
+          <div class="swipe-reveal" aria-hidden="true"><span>Open ↗</span><span>Close ×</span></div>
+          <section class="agent-answer swipe-card" data-swipe-card data-swipe-open="home-answer-open:current" data-swipe-close="home-answer-close:current">
+            <p>${escapeHtml(agentAnswer)}</p><button type="button" data-copy-home-answer>Copy</button>
+          </section>
+        </div>` : ""}
       ${homeChecklistVisible ? renderChecklistCard("home") : ""}
       <button class="talk-target home-talk" type="button" data-screen="voice">
         <div class="ring">●</div>
@@ -3876,13 +4167,17 @@ function renderNow(): string {
              <div class="proposal-list">${proposals.map(renderProposal).join("")}</div>`
           : ""
       }
-      <section class="brief-card">
-        <div class="brief-head">
-          <span>What you missed</span>
-          ${agentBusy ? renderSlyOrbit(16) : `<button type="button" data-refresh-now="true">↻</button>`}
-        </div>
-        ${agentBusy ? `<div class="now-reading">${renderSlyOrbit(18)}<span>reading your day</span></div>` : `<p>${escapeHtml(summary)}</p><strong>${escapeHtml(nowTextBack(tasks, proposals))}</strong>`}
-      </section>
+      ${nowBriefHidden ? "" : `
+        <div class="swipe-shell brief-shell">
+          <div class="swipe-reveal close-only" aria-hidden="true"><span></span><span>Close ×</span></div>
+          <section class="brief-card swipe-card" data-swipe-card data-swipe-close="brief-dismiss:current">
+            <div class="brief-head">
+              <span>What you missed</span>
+              ${agentBusy ? renderSlyOrbit(16) : `<button type="button" data-refresh-now="true">↻</button>`}
+            </div>
+            ${agentBusy ? `<div class="now-reading">${renderSlyOrbit(18)}<span>reading your day</span></div>` : `<p>${escapeHtml(summary)}</p><strong>${escapeHtml(nowTextBack(tasks, proposals))}</strong>`}
+          </section>
+        </div>`}
       <div class="section-label">Waiting on you · ${tasks.length}</div>
       <div class="thread-list">
         ${
@@ -3938,16 +4233,19 @@ async function refreshNowDigest(): Promise<void> {
 
 function renderProposal(proposal: Proposal): string {
   return `
-    <article class="proposal-card">
-      <div>
-        <strong>${escapeHtml(proposal.title)}</strong>
-        <span>${escapeHtml(proposal.subtitle)}</span>
-      </div>
-      <div class="proposal-actions">
-        <button class="confirm" type="button" data-proposal-confirm="${escapeAttr(proposal.id)}">${escapeHtml(proposal.cta)} ✓</button>
-        <button type="button" data-proposal-dismiss="${escapeAttr(proposal.id)}">Dismiss</button>
-      </div>
-    </article>
+    <div class="swipe-shell">
+      <div class="swipe-reveal" aria-hidden="true"><span>Open ↗</span><span>Close ×</span></div>
+      <article class="proposal-card swipe-card" data-swipe-card data-swipe-open="proposal-confirm:${escapeAttr(proposal.id)}" data-swipe-close="proposal-dismiss:${escapeAttr(proposal.id)}">
+        <div>
+          <strong>${escapeHtml(proposal.title)}</strong>
+          <span>${escapeHtml(proposal.subtitle)}</span>
+        </div>
+        <div class="proposal-actions">
+          <button class="confirm" type="button" data-proposal-confirm="${escapeAttr(proposal.id)}">${escapeHtml(proposal.cta)} ✓</button>
+          <button type="button" data-proposal-dismiss="${escapeAttr(proposal.id)}">Dismiss</button>
+        </div>
+      </article>
+    </div>
   `;
 }
 
@@ -3956,31 +4254,34 @@ function renderNowTask(task: NowTask): string {
   const isCalendarTask = Boolean(task.calendarEvent);
   const canNativeSend = nativePlatform === "macos" && (task.app === "Mail" || task.app === "Messages");
   return `
-    <article class="thread-card now-task">
-      <div class="avatar-wrap">
-        <div class="avatar" style="background:${appColor(task.app, task.pkg)}">${escapeHtml(task.contact[0] ?? "S")}</div>
-        <div class="app-badge" style="background:${appColor(task.app, task.pkg)}">${escapeHtml(task.app.slice(0, 1).toUpperCase())}</div>
-      </div>
-      <div class="thread-body">
-        <div class="thread-top">
-          <strong>${escapeHtml(task.contact)}</strong>
-          <span>${escapeHtml(task.status)}</span>
+    <div class="swipe-shell">
+      <div class="swipe-reveal" aria-hidden="true"><span>Open ↗</span><span>Close ×</span></div>
+      <article class="thread-card now-task swipe-card" data-swipe-card data-swipe-open="task-open:${escapeAttr(task.id)}" data-swipe-close="task-dismiss:${escapeAttr(task.id)}">
+        <div class="avatar-wrap">
+          <div class="avatar" style="background:${appColor(task.app, task.pkg)}">${escapeHtml(task.contact[0] ?? "S")}</div>
+          <div class="app-badge" style="background:${appColor(task.app, task.pkg)}">${escapeHtml(task.app.slice(0, 1).toUpperCase())}</div>
         </div>
-        <p><span>via ${escapeHtml(task.app)}</span></p>
-        <blockquote>${escapeHtml(task.text)}</blockquote>
-        ${task.draft ? `<div class="inline-draft"><span>draft</span><p>${escapeHtml(task.draft)}</p></div>` : ""}
-        <div class="thread-actions">
-          ${
-            isSetupTask
-              ? `<button type="button" data-task-open="${escapeAttr(task.id)}">Open ↗</button>`
-              : `${isCalendarTask ? "" : `<button type="button" data-task-draft="${escapeAttr(task.id)}">${task.draft ? "Regenerate" : "Draft"}</button>`}
-                 <button type="button" data-task-send="${escapeAttr(task.id)}" ${task.draft ? "" : "disabled"}>${isCalendarTask ? "Add to Calendar" : canNativeSend ? "Send" : "Open draft"}</button>
-                 <button type="button" data-task-dismiss="${escapeAttr(task.id)}">Close</button>
-                 <button type="button" data-task-open="${escapeAttr(task.id)}">Open ↗</button>`
-          }
+        <div class="thread-body">
+          <div class="thread-top">
+            <strong>${escapeHtml(task.contact)}</strong>
+            <span>${escapeHtml(task.status)}</span>
+          </div>
+          <p><span>via ${escapeHtml(task.app)}</span></p>
+          <blockquote>${escapeHtml(task.text)}</blockquote>
+          ${task.draft ? `<div class="inline-draft"><span>draft</span><p>${escapeHtml(task.draft)}</p></div>` : ""}
+          <div class="thread-actions">
+            ${
+              isSetupTask
+                ? `<button type="button" data-task-open="${escapeAttr(task.id)}">Open ↗</button>`
+                : `${isCalendarTask ? "" : `<button type="button" data-task-draft="${escapeAttr(task.id)}">${task.draft ? "Regenerate" : "Draft"}</button>`}
+                   <button type="button" data-task-send="${escapeAttr(task.id)}" ${task.draft ? "" : "disabled"}>${isCalendarTask ? "Add to Calendar" : canNativeSend ? "Send" : "Open draft"}</button>
+                   <button type="button" data-task-dismiss="${escapeAttr(task.id)}">Close</button>
+                   <button type="button" data-task-open="${escapeAttr(task.id)}">Open ↗</button>`
+            }
+          </div>
         </div>
-      </div>
-    </article>
+      </article>
+    </div>
   `;
 }
 
@@ -4161,8 +4462,7 @@ function appColor(app: string, pkg = ""): string {
 
 function renderMemory(): string {
   const memories = localMemories();
-  const shown = memoryQuery ? memoryStore.search(memoryQuery) : memories;
-  const graph = buildBrainGraph(shown);
+  const graph = buildBrainGraph(memories);
   const selected = findBrainNode(graph, selectedBrainKey);
   const recentQueries = memorySearchHistory();
   const filters: Array<{ label: string; short: string; type: BrainNodeType }> = [
@@ -4205,7 +4505,7 @@ function renderMemory(): string {
           .join("")}
       </div>
       <div class="memory-map" aria-label="Memory graph preview">
-        ${shown.length ? renderBrainCanvas("memory") : `<p>No memory nodes yet. Import or add a memory to grow the brain.</p>`}
+        ${memories.length ? renderBrainCanvas("memory") : `<p>No memory nodes yet. Import or add a memory to grow the brain.</p>`}
       </div>
       ${selected && selected.type !== "hub" ? renderBrainSelection(selected) : ""}
       <div class="divider"></div>
@@ -5380,7 +5680,8 @@ function renderBackup(): string {
           <button id="backup-export" type="button">Export file</button>
           <label class="button-label" for="backup-import-file">Restore file</label>
         </div>
-        <input id="backup-import-file" type="file" accept="application/json,.slyosbrain" hidden />
+        <input id="backup-import-file" type="file" accept="application/json,.slyosbrain,application/zip,.zip" hidden />
+        <p class="setup-fineprint">Restore accepts an encrypted .slyosbrain file or Android's slyos-brain-backup.zip. Android API keys and vault secrets are not copied into portable settings.</p>
         <div class="caption-line">${escapeHtml(backupStatus)}</div>
       </section>
     </div>
@@ -5426,6 +5727,15 @@ async function exportBrainBackup(): Promise<void> {
 }
 
 async function importBrainBackup(file: File): Promise<void> {
+  if (file.name.toLowerCase().endsWith(".zip")) {
+    const { importAndroidBackup } = await import("./androidBackupImport");
+    const imported = await importAndroidBackup(file);
+    backupStatus = `Imported ${imported.memories.length} Android brain items. ${mergeAndroidBackup(imported)}`;
+    recordDiagnostic("sync", imported.report.warnings.length ? "error" : "ok", backupStatus);
+    scheduleBrainSync("android-backup-import");
+    render();
+    return;
+  }
   const password = document.querySelector<HTMLInputElement>("#backup-password")?.value ?? "";
   if (!password) throw new Error("Enter the password used for this backup.");
   const envelope = JSON.parse(await file.text()) as Record<string, unknown>;
@@ -5452,6 +5762,45 @@ async function importBrainBackup(file: File): Promise<void> {
   backupStatus = `Restored ${restored} local record${restored === 1 ? "" : "s"}. Reloading…`;
   render();
   setTimeout(() => window.location.reload(), 500);
+}
+
+function mergeAndroidBackup(imported: AndroidBackupImport): string {
+  memoryStore.upsertMany(imported.memories);
+  for (const setting of imported.settings) memoryStore.setSetting(setting.key, setting.value);
+  if (imported.checklist.length) {
+    const merged = new Map(checklistItems().map((item) => [item.id, item]));
+    for (const item of imported.checklist) merged.set(item.id, item);
+    saveChecklistItems([...merged.values()]);
+  }
+  if (imported.papers.length) {
+    const merged = new Map(researchPapers().map((paper) => [paper.id, paper]));
+    for (const paper of imported.papers) {
+      merged.set(paper.id, {
+        id: paper.id,
+        title: paper.title,
+        topic: paper.title,
+        abstract: paper.body.slice(0, 700),
+        outline: [],
+        draft: paper.body,
+        createdAt: paper.createdAt,
+        updatedAt: paper.updatedAt
+      });
+    }
+    saveResearchPapers([...merged.values()]);
+  }
+  if (imported.expenses.length) {
+    const merged = new Map(expenseRecords().map((record) => [record.id, record]));
+    for (const record of imported.expenses) merged.set(record.id, record);
+    saveExpenseRecords([...merged.values()]);
+  }
+  if (imported.coworkFiles.length) {
+    const merged = new Map(coworkFiles().map((record) => [record.id, record]));
+    for (const record of imported.coworkFiles) merged.set(record.id, record);
+    saveCoworkFiles([...merged.values()]);
+  }
+  applySyncedSettingsToRuntime(imported.memories);
+  const report = imported.report;
+  return `${report.logEntries} memory-log entries, ${report.messages} recent messages, ${report.people} people, ${report.facts} facts, ${report.checklist} tasks, ${report.papers} papers, ${report.expenses} expenses, ${report.coworkFiles} Cowork files${report.networkConnections ? `, and ${report.networkConnections} network connections` : ""}.${report.warnings.length ? ` ${report.warnings.join(" ")}` : ""}`;
 }
 
 function renderFloatingNav(): string {
@@ -6031,8 +6380,8 @@ function renderSlyOrbit(size = 30): string {
   return `<canvas class="sly-orbit" data-sly-orbit="${size}" width="${size}" height="${size}" style="--orbit-size:${size}px" aria-hidden="true"></canvas>`;
 }
 
-function renderEdgeShimmer(): string {
-  return `<div class="edge-shimmer" aria-hidden="true"></div>`;
+function renderBusyPerimeter(): string {
+  return `<canvas class="busy-perimeter" data-busy-perimeter aria-hidden="true"></canvas>`;
 }
 
 function renderBottomNav(): string {
@@ -6051,6 +6400,7 @@ function renderBottomNav(): string {
       ${items.slice(0, 2).map(renderNavItem).join("")}
       <button class="brain-tab ${["memory", "memory-settings", "mission", "network", "account", "diagnostics"].includes(screen) ? "active" : ""}" data-screen="memory" aria-label="Brain">
         <span class="nav-icon">${materialIcon("memory")}</span>
+        <span class="nav-label">Brain</span>
       </button>
       ${items.slice(2).map(renderNavItem).join("")}
     </nav>
@@ -6066,6 +6416,7 @@ function renderNavItem(item: { id: ShellScreen; label: string; icon: string; bad
   return `
     <button class="nav-tab ${active ? "active" : ""}" data-screen="${item.id}" aria-label="${escapeAttr(item.label)}">
       <span class="nav-icon">${materialIcon(navMaterialIcon(item.icon))}${item.badge ? `<b>${item.badge}</b>` : ""}</span>
+      <span class="nav-label">${escapeHtml(item.label)}</span>
     </button>
   `;
 }
@@ -6102,6 +6453,8 @@ function shouldShowNav(current: ShellScreen): boolean {
 function wireEvents(): void {
   wireBrainCanvases();
   wireSlyOrbitCanvases();
+  wireBusyPerimeterCanvases();
+  wireSwipeCards();
 
   document.querySelector<HTMLInputElement>("#prompt-input")?.addEventListener("input", (event) => {
     const previousSeed = promptText.trim();
@@ -6109,6 +6462,8 @@ function wireEvents(): void {
     const seed = promptText.trim();
     const previousCouldMatch = previousSeed.length >= 2 && !previousSeed.includes(" ");
     const nextCouldMatch = seed.length >= 2 && !seed.includes(" ");
+    const send = document.querySelector<HTMLButtonElement>(".send-button");
+    if (send) send.disabled = !seed || agentBusy;
     if ((!previousCouldMatch && !nextCouldMatch) || !installedApps.length) return;
     render();
     requestAnimationFrame(() => {
@@ -6116,6 +6471,20 @@ function wireEvents(): void {
       field?.focus();
       field?.setSelectionRange(field.value.length, field.value.length);
     });
+  });
+
+  document.querySelector("[data-home-attach]")?.addEventListener("click", () => {
+    document.querySelector<HTMLInputElement>("#home-attachment-input")?.click();
+  });
+  document.querySelector<HTMLInputElement>("#home-attachment-input")?.addEventListener("change", (event) => {
+    const input = event.currentTarget as HTMLInputElement;
+    void attachHomeFiles(input.files).finally(() => { input.value = ""; });
+  });
+  document.querySelectorAll<HTMLElement>("[data-remove-home-attachment]").forEach((button) => {
+    button.addEventListener("click", () => removeHomeAttachment(button.dataset.removeHomeAttachment ?? ""));
+  });
+  document.querySelector("[data-copy-home-answer]")?.addEventListener("click", () => {
+    void navigator.clipboard.writeText(agentAnswer);
   });
 
   document.querySelector<HTMLInputElement>("#installed-app-query")?.addEventListener("input", (event) => {
@@ -7696,11 +8065,7 @@ async function refreshDevicePermissions(): Promise<void> {
 function wireBrainCanvases(): void {
   document.querySelectorAll<HTMLCanvasElement>("[data-brain-canvas]").forEach((canvas) => {
     const mode = canvas.dataset.brainCanvas === "voice" ? "voice" : "memory";
-    const pathKeys = new Set(memoryPathKeys);
-    const items = mode === "memory" && memoryQuery
-      ? localMemories().filter((item) => pathKeys.has(item.id))
-      : localMemories();
-    const graph = buildBrainGraph(items);
+    const graph = buildBrainGraph(localMemories());
     const options: BrainCanvasOptions = {
       mode,
       selectedKey: mode === "memory" ? selectedBrainKey : null,
@@ -7724,6 +8089,132 @@ function wireBrainCanvases(): void {
 
 function wireSlyOrbitCanvases(): void {
   document.querySelectorAll<HTMLCanvasElement>("[data-sly-orbit]").forEach(wireSlyOrbitCanvas);
+}
+
+function wireBusyPerimeterCanvases(): void {
+  document.querySelectorAll<HTMLCanvasElement>("[data-busy-perimeter]").forEach(wireBusyPerimeterCanvas);
+}
+
+function wireSwipeCards(): void {
+  document.querySelectorAll<HTMLElement>("[data-swipe-card]").forEach((card) => {
+    let startX = 0;
+    let startY = 0;
+    let offsetX = 0;
+    let dragging = false;
+    let wheelTimer = 0;
+
+    const showOffset = (value: number): void => {
+      offsetX = Math.max(-320, Math.min(320, value));
+      card.style.setProperty("--swipe-x", `${offsetX}px`);
+      card.classList.toggle("swiping", Math.abs(offsetX) > 1);
+    };
+    const settle = (): void => {
+      const threshold = Math.min(130, card.clientWidth * 0.3);
+      if (offsetX >= threshold) dispatchSwipeAction(card.dataset.swipeOpen ?? "");
+      else if (offsetX <= -threshold) dispatchSwipeAction(card.dataset.swipeClose ?? "");
+      else {
+        card.classList.add("settling");
+        showOffset(0);
+        window.setTimeout(() => card.classList.remove("settling"), 180);
+      }
+    };
+
+    card.addEventListener("pointerdown", (event) => {
+      if ((event.target as HTMLElement).closest("button, a, input, textarea, select")) return;
+      startX = event.clientX;
+      startY = event.clientY;
+      offsetX = 0;
+      dragging = true;
+      card.setPointerCapture(event.pointerId);
+    });
+    card.addEventListener("pointermove", (event) => {
+      if (!dragging) return;
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
+        dragging = false;
+        showOffset(0);
+        return;
+      }
+      if (Math.abs(dx) > 5) {
+        event.preventDefault();
+        showOffset(dx);
+      }
+    });
+    card.addEventListener("pointerup", (event) => {
+      if (!dragging) return;
+      dragging = false;
+      if (Math.abs(offsetX) < 7 && Math.abs(event.clientY - startY) < 7) {
+        dispatchSwipeAction(card.dataset.swipeOpen ?? "");
+        return;
+      }
+      settle();
+    });
+    card.addEventListener("pointercancel", () => {
+      dragging = false;
+      showOffset(0);
+    });
+    card.addEventListener("wheel", (event) => {
+      if (Math.abs(event.deltaX) <= Math.abs(event.deltaY) || Math.abs(event.deltaX) < 2) return;
+      event.preventDefault();
+      showOffset(offsetX - event.deltaX);
+      window.clearTimeout(wheelTimer);
+      wheelTimer = window.setTimeout(settle, 90);
+    }, { passive: false });
+  });
+}
+
+function dispatchSwipeAction(action: string): void {
+  const separator = action.indexOf(":");
+  if (separator < 1) return;
+  const kind = action.slice(0, separator);
+  const id = action.slice(separator + 1);
+  if (kind === "home-answer-open") {
+    void openHomeAnswer();
+    return;
+  }
+  if (kind === "home-answer-close") {
+    agentAnswer = "";
+    homeChecklistVisible = false;
+    render();
+    return;
+  }
+  if (kind === "brief-dismiss") {
+    nowBriefHidden = true;
+    render();
+    return;
+  }
+  const candidates = kind === "proposal-confirm"
+    ? document.querySelectorAll<HTMLElement>("[data-proposal-confirm]")
+    : kind === "proposal-dismiss"
+      ? document.querySelectorAll<HTMLElement>("[data-proposal-dismiss]")
+      : kind === "task-open"
+        ? document.querySelectorAll<HTMLElement>("[data-task-open]")
+        : kind === "task-dismiss"
+          ? document.querySelectorAll<HTMLElement>("[data-task-dismiss]")
+          : [];
+  for (const candidate of Array.from(candidates)) {
+    const candidateId = candidate.dataset.proposalConfirm
+      ?? candidate.dataset.proposalDismiss
+      ?? candidate.dataset.taskOpen
+      ?? candidate.dataset.taskDismiss;
+    if (candidateId === id) {
+      candidate.click();
+      return;
+    }
+  }
+}
+
+async function openHomeAnswer(): Promise<void> {
+  const answerUrl = agentAnswer.match(/https?:\/\/[^\s]+/i)?.[0]?.replace(/[),.;]+$/, "");
+  const latestPrompt = [...homeConversation()].reverse().find((turn) => turn.role === "user")?.body ?? agentAnswer.slice(0, 120);
+  const url = answerUrl || `https://www.google.com/search?q=${encodeURIComponent(latestPrompt)}`;
+  try {
+    await openExternalUrl(url);
+  } catch (error) {
+    agentAnswer = error instanceof Error ? error.message : String(error);
+    render();
+  }
 }
 
 async function runChat(): Promise<void> {
@@ -8642,7 +9133,7 @@ async function executeDeviceSequence(prompt: string, sequence: DeviceSequence, s
 
 const iosDevicePrimitiveTypes = new Set([
   "open_url", "open_app", "set_clipboard", "wait", "calendar_events", "create_calendar_event",
-  "search_contacts", "reminder_items", "create_reminder", "run_shortcut"
+  "search_contacts", "reminder_items", "create_reminder", "run_shortcut", "export_file", "device_status"
 ]);
 
 function isIosDeviceSequenceSupported(sequence: DeviceSequence): boolean {
@@ -9368,6 +9859,26 @@ async function syncAction(run: () => Promise<void>): Promise<void> {
   render();
 }
 
+async function refreshDeviceStatus(): Promise<void> {
+  if (deviceStatusLoading) return;
+  deviceStatusLoading = true;
+  deviceStatusCheckedAt = Date.now();
+  try {
+    const payload = nativePlatform === "ios"
+      ? await runIosDevicePrimitive({ type: "device_status" })
+      : await deviceFetch("/actions", { method: "POST", body: JSON.stringify({ type: "device_status" }) });
+    const result = (payload.result ?? payload) as Record<string, unknown>;
+    const rawLevel = Number(result.batteryLevel);
+    deviceBatteryLevel = Number.isFinite(rawLevel) && rawLevel >= 0 ? Math.min(100, Math.round(rawLevel)) : null;
+    deviceBatteryCharging = result.charging === true;
+  } catch {
+    deviceBatteryLevel = null;
+  } finally {
+    deviceStatusLoading = false;
+    render();
+  }
+}
+
 async function observeDeviceFromPrompt(): Promise<void> {
   await deviceAction(async () => {
     saveDeviceBridgeSettings();
@@ -9396,14 +9907,29 @@ async function deviceFetch(path: string, init: RequestInit = {}): Promise<Record
   if (!deviceBridgeUrl || !deviceBridgeToken) throw new Error("device bridge URL or token missing");
   const actionType = typeof init.body === "string" ? safeActionType(init.body) : init.method || "GET";
   recordDiagnostic("bridge", "info", `${actionType} → ${path}`);
-  const response = await fetch(`${deviceBridgeUrl.replace(/\/$/, "")}${path}`, {
-    ...init,
-    headers: {
-      authorization: `Bearer ${deviceBridgeToken}`,
-      "content-type": "application/json",
-      ...(init.headers ?? {})
-    }
-  });
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(init.signal?.reason);
+  if (init.signal?.aborted) abortFromCaller();
+  else init.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const timeout = window.setTimeout(() => controller.abort("device bridge timeout"), 35_000);
+  let response: Response;
+  try {
+    response = await fetch(`${deviceBridgeUrl.replace(/\/$/, "")}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        authorization: `Bearer ${deviceBridgeToken}`,
+        "content-type": "application/json",
+        ...(init.headers ?? {})
+      }
+    });
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(`Device bridge timed out while running ${actionType}.`);
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+    init.signal?.removeEventListener("abort", abortFromCaller);
+  }
   const payload = (await response.json()) as Record<string, any>;
   if (!response.ok || payload.ok === false) {
     throw new Error(String(payload.error ?? `device bridge failed: ${response.status}`));
@@ -9431,7 +9957,7 @@ function saveDeviceBridgeSettings(): void {
 }
 
 const homeRoutes = new Set<HomeRoute>([
-  "answer", "device", "calendar", "native_read", "outbound", "checklist", "research", "cowork",
+  "answer", "device", "navigation", "music", "artifact", "calendar", "native_read", "outbound", "checklist", "research", "cowork",
   "mission", "network", "job", "architect", "documents", "faces", "shop", "investing", "compose",
   "email", "spicy", "expenses", "apps"
 ]);
@@ -9450,6 +9976,8 @@ async function planHomeRequest(request: string): Promise<HomeDecision | null> {
         "Return strict JSON only with keys route, confidence, subject, target, requiresDevice, reason.",
         `Allowed routes: ${[...homeRoutes].join(", ")}.`,
         "Use device when completing the request requires operating another Mac app or website.",
+        "Use navigation only for physical directions to a real-world destination. Use music for a song, artist, album, or Spotify request.",
+        "Use artifact when the user wants a real DOCX, XLSX, PPTX, or PDF file created.",
         "Use native_read only for reading native calendar, reminders, contacts, or files. Use calendar only for creating/changing an event.",
         "Use outbound for a message or communication that should be drafted/reviewed in Now instead of visually operating its app.",
         "Use a named workflow route when its dedicated SlyOS screen is the natural destination. Use answer only for a conversational answer.",
@@ -9477,6 +10005,23 @@ async function planHomeRequest(request: string): Promise<HomeDecision | null> {
 async function runHomeDecisionWorkflow(decision: HomeDecision | null, request: string): Promise<boolean> {
   if (!decision || decision.confidence < 0.55) return false;
   const subject = cleanCommandSubject(decision.subject || request);
+  if (decision.route === "navigation") {
+    const destination = cleanCommandSubject(decision.target || subject);
+    if (!destination) return false;
+    return runSemanticActionWorkflow(`navigate to ${destination}`);
+  }
+  if (decision.route === "music") {
+    const music = cleanCommandSubject(decision.subject || decision.target);
+    if (!music) return false;
+    return runSemanticActionWorkflow(`play ${music} on Spotify`);
+  }
+  if (decision.route === "artifact") {
+    const artifact = extractArtifactRequest(request)
+      ?? extractArtifactRequest(`create a document about ${subject || decision.target}`);
+    if (!artifact) return false;
+    agentAnswer = await createArtifactFromPrompt(request, artifact);
+    return true;
+  }
   if (decision.route === "checklist") {
     if (subject) addChecklistItem(subject);
     homeChecklistVisible = true;
@@ -9589,6 +10134,45 @@ async function runPrompt(): Promise<void> {
   recordDiagnostic("brain", "info", `Prompt accepted · ${plan.actions.length} planned action(s) · ${sequence.length} native primitive(s).`);
   promptText = "";
 
+  agentBusy = true;
+  render();
+  try {
+    if (await runSemanticActionWorkflow(executionRequest)) {
+      rememberHomeTurn("assistant", agentAnswer, ["agent-response", "semantic-action"]);
+      recordDiagnostic("brain", "ok", "Android-style semantic action completed before visual device control.");
+      scheduleBrainSync("semantic-action");
+      return;
+    }
+  } catch (error) {
+    agentAnswer = error instanceof Error ? error.message : String(error);
+    rememberHomeTurn("assistant", agentAnswer, ["agent-response", "semantic-action", "error"]);
+    recordDiagnostic("brain", "error", agentAnswer);
+    return;
+  } finally {
+    agentBusy = false;
+    render();
+  }
+
+  if (shouldAutoRunDeviceAction(request, sequence) && !shouldRunAgenticDeviceLoop(request, sequence)) {
+    agentBusy = true;
+    render();
+    try {
+      const result = await executeDeviceSequence(request, sequence, "home");
+      agentAnswer = `Done. ${result}`;
+      rememberHomeTurn("assistant", agentAnswer, ["agent-response", "operate"]);
+      recordDiagnostic("bridge", "ok", `Immediate deterministic device sequence completed · ${sequence.length} primitive(s).`);
+    } catch (error) {
+      agentAnswer = error instanceof Error ? error.message : String(error);
+      rememberHomeTurn("assistant", agentAnswer, ["agent-response", "error"]);
+      recordDiagnostic("bridge", "error", agentAnswer);
+    } finally {
+      agentBusy = false;
+      scheduleBrainSync("device-action");
+      render();
+    }
+    return;
+  }
+
   agentBusy = hasTextModel();
   if (agentBusy) render();
   const homeDecision = await planHomeRequest(executionRequest);
@@ -9659,7 +10243,7 @@ async function runPrompt(): Promise<void> {
 
   const modelRequestsDevice = Boolean(homeDecision && homeDecision.confidence >= 0.55 && (homeDecision.route === "device" || homeDecision.requiresDevice));
   const deterministicDeviceSequence = sequence.some((step) => step.type !== "observe_screen" && step.type !== "wait");
-  if ((shouldAutoRunDeviceAction(request, sequence) || (modelRequestsDevice && deterministicDeviceSequence)) && !shouldRunAgenticDeviceLoop(request, sequence)) {
+  if (modelRequestsDevice && deterministicDeviceSequence && !shouldRunAgenticDeviceLoop(request, sequence)) {
     agentBusy = true;
     render();
     try {
@@ -9700,22 +10284,6 @@ async function runPrompt(): Promise<void> {
     }
   }
 
-  if (await runLocalWorkflow(request)) {
-    rememberHomeTurn("assistant", agentAnswer || "The local workflow completed.", ["agent-response", "local-workflow"]);
-    recordDiagnostic("brain", "ok", "Local workflow completed and wrote to the brain.");
-    scheduleBrainSync("local-workflow");
-    render();
-    return;
-  }
-
-  if (await runHomeDecisionWorkflow(homeDecision, executionRequest)) {
-    rememberHomeTurn("assistant", agentAnswer || "The selected SlyOS workflow opened.", ["agent-response", "model-routed-workflow"]);
-    recordDiagnostic("brain", "ok", `Model-routed workflow completed · ${homeDecision?.route ?? "unknown"}.`);
-    scheduleBrainSync("model-routed-workflow");
-    render();
-    return;
-  }
-
   if (isOutboundRequest(request) || (homeDecision?.route === "outbound" && homeDecision.confidence >= 0.55)) {
     agentBusy = true;
     render();
@@ -9733,6 +10301,22 @@ async function runPrompt(): Promise<void> {
       scheduleBrainSync("outbound-staged");
       render();
     }
+    return;
+  }
+
+  if (await runLocalWorkflow(request)) {
+    rememberHomeTurn("assistant", agentAnswer || "The local workflow completed.", ["agent-response", "local-workflow"]);
+    recordDiagnostic("brain", "ok", "Local workflow completed and wrote to the brain.");
+    scheduleBrainSync("local-workflow");
+    render();
+    return;
+  }
+
+  if (await runHomeDecisionWorkflow(homeDecision, executionRequest)) {
+    rememberHomeTurn("assistant", agentAnswer || "The selected SlyOS workflow opened.", ["agent-response", "model-routed-workflow"]);
+    recordDiagnostic("brain", "ok", `Model-routed workflow completed · ${homeDecision?.route ?? "unknown"}.`);
+    scheduleBrainSync("model-routed-workflow");
+    render();
     return;
   }
 

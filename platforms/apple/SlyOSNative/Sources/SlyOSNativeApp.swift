@@ -5,6 +5,7 @@ import AVFoundation
 import AppIntents
 @preconcurrency import Contacts
 @preconcurrency import EventKit
+import UIKit
 #if canImport(FoundationModels)
 import FoundationModels
 #endif
@@ -137,6 +138,10 @@ extension SlyOSWebShell: UIViewRepresentable {
                 createReminder(payload, requestId: requestId)
             case "run_shortcut":
                 runShortcut(payload, requestId: requestId)
+            case "export_file":
+                exportFile(payload, requestId: requestId)
+            case "device_status":
+                readDeviceStatus(requestId: requestId)
             case "local_model_status":
                 localModelStatus(requestId: requestId)
             case "local_model_generate":
@@ -167,6 +172,7 @@ extension SlyOSWebShell: UIViewRepresentable {
                 "maps": "maps://",
                 "apple maps": "maps://",
                 "youtube": "youtube://",
+                "spotify": "spotify://",
                 "shortcuts": "shortcuts://",
                 "reminders": "x-apple-reminderkit://",
                 "music": "music://",
@@ -439,6 +445,75 @@ extension SlyOSWebShell: UIViewRepresentable {
                 return
             }
             openNativeUrl(url, requestId: requestId, label: "Shortcut \(name)")
+        }
+
+        private func exportFile(_ payload: [String: Any], requestId: String) {
+            let rawName = (payload["name"] as? String ?? "SlyOS File").trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = rawName
+                .components(separatedBy: CharacterSet(charactersIn: "/:\\?%*\"<>|"))
+                .filter { !$0.isEmpty }
+                .joined(separator: "-")
+                .prefix(120)
+            guard
+                !name.isEmpty,
+                let encoded = payload["base64"] as? String,
+                encoded.count <= 34_000_000,
+                let data = Data(base64Encoded: encoded, options: [.ignoreUnknownCharacters]),
+                !data.isEmpty,
+                data.count <= 24 * 1024 * 1024
+            else {
+                sendDeviceResult(requestId, ok: false, message: "The generated file was empty, invalid, or larger than 24 MB.")
+                return
+            }
+            do {
+                let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SlyOS Exports", isDirectory: true)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let fileUrl = directory.appendingPathComponent(String(name), isDirectory: false)
+                try data.write(to: fileUrl, options: .atomic)
+                guard let presenter = topViewController() else {
+                    sendDeviceResult(requestId, ok: false, message: "SlyOS could not open the iPhone Files picker.")
+                    return
+                }
+                let picker = UIDocumentPickerViewController(forExporting: [fileUrl], asCopy: true)
+                picker.modalPresentationStyle = .formSheet
+                presenter.present(picker, animated: true) { [weak self] in
+                    self?.sendDeviceResult(
+                        requestId,
+                        ok: true,
+                        message: "Created \(name). Choose where to save it in Files.",
+                        result: ["name": String(name), "bytes": data.count]
+                    )
+                }
+            } catch {
+                sendDeviceResult(requestId, ok: false, message: error.localizedDescription)
+            }
+        }
+
+        private func readDeviceStatus(requestId: String) {
+            UIDevice.current.isBatteryMonitoringEnabled = true
+            let rawLevel = UIDevice.current.batteryLevel
+            let level: Any = rawLevel >= 0 ? Int((rawLevel * 100).rounded()) : NSNull()
+            let state = UIDevice.current.batteryState
+            sendDeviceResult(
+                requestId,
+                ok: true,
+                message: "Read the iPhone battery state.",
+                result: [
+                    "batteryLevel": level,
+                    "charging": state == .charging || state == .full,
+                    "powerSource": state == .charging || state == .full ? "external" : "battery"
+                ]
+            )
+        }
+
+        private func topViewController() -> UIViewController? {
+            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            let window = scenes.flatMap(\.windows).first(where: { $0.isKeyWindow }) ?? scenes.flatMap(\.windows).first
+            var current = window?.rootViewController
+            while let presented = current?.presentedViewController { current = presented }
+            if let navigation = current as? UINavigationController { return navigation.visibleViewController ?? navigation }
+            if let tab = current as? UITabBarController { return tab.selectedViewController ?? tab }
+            return current
         }
 
         private func localModelStatus(requestId: String) {

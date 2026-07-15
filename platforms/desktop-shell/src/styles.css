@@ -210,9 +210,11 @@ textarea {
 
 .nav-tab,
 .brain-tab {
-  min-height: 50px;
+  min-height: 66px;
   display: grid;
-  place-items: center;
+  grid-template-rows: 50px 16px;
+  justify-items: center;
+  align-items: center;
   color: var(--faint);
   font-size: 13px;
   font-weight: 400;
@@ -249,6 +251,19 @@ textarea {
   font-weight: 500;
 }
 
+.nav-label {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .brain-tab {
   color: var(--accent);
   font-weight: 500;
@@ -268,13 +283,14 @@ textarea {
   overflow: hidden;
 }
 
-.brain-tab.active span {
+.brain-tab.active .nav-icon {
   background: var(--accent);
   color: var(--elev);
 }
 
 .nav-icon svg,
 .screen-header svg,
+.attach-button svg,
 .camera-button svg,
 .settings-button svg {
   width: 100%;
@@ -543,6 +559,11 @@ textarea {
 }
 
 .home-greeting {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.home-greeting.animate {
   animation: home-greeting-in 650ms ease-out both;
 }
 
@@ -554,6 +575,10 @@ textarea {
   border-radius: 2px;
   background: var(--accent);
   transform-origin: left center;
+  transform: scaleX(1);
+}
+
+.home-greeting.animate > span {
   animation: home-greeting-line 780ms 240ms ease-out both;
 }
 
@@ -582,11 +607,18 @@ textarea {
   color: var(--faint);
 }
 
+.attach-button,
 .camera-button {
   color: var(--soft);
   width: 24px;
   height: 24px;
   flex: 0 0 24px;
+}
+
+.attach-button {
+  width: 22px;
+  height: 22px;
+  flex-basis: 22px;
 }
 
 .camera-button::before {
@@ -595,6 +627,43 @@ textarea {
 
 .camera-button::after {
   content: none;
+}
+
+.home-attachments {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  overflow-x: auto;
+}
+
+.home-attachments > span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  background: var(--elev);
+  color: var(--soft);
+  padding: 7px 10px 7px 12px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.home-attachments b {
+  max-width: 180px;
+  overflow: hidden;
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+
+.home-attachments button {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  font-size: 17px;
+  line-height: 1;
 }
 
 .send-button,
@@ -608,6 +677,12 @@ textarea {
   color: var(--elev);
   padding: 9px 16px;
   font-size: 14px;
+}
+
+.send-button:disabled {
+  background: var(--hair);
+  color: var(--faint);
+  cursor: default;
 }
 
 .setup-warning {
@@ -833,6 +908,15 @@ textarea {
   line-height: 1.22;
   margin: 0;
   white-space: pre-wrap;
+}
+
+.agent-answer > button {
+  margin-top: 10px;
+  border-radius: 999px;
+  background: var(--hair);
+  color: var(--accent);
+  padding: 6px 12px;
+  font-size: 14px;
 }
 
 .thinking-answer,
@@ -1486,6 +1570,57 @@ textarea {
   display: grid;
   gap: 10px;
   margin-bottom: 14px;
+}
+
+.swipe-shell {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.home-answer-shell {
+  margin-top: 12px;
+  border-radius: 14px;
+}
+
+.home-answer-shell .agent-answer,
+.brief-shell .brief-card {
+  margin: 0;
+}
+
+.brief-shell {
+  margin-bottom: 14px;
+  border-radius: 14px;
+}
+
+.swipe-reveal {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 22px;
+  color: var(--accent);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.swipe-reveal span:last-child {
+  color: var(--danger);
+}
+
+.swipe-card {
+  position: relative;
+  z-index: 1;
+  transform: translate3d(var(--swipe-x, 0), 0, 0);
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.swipe-card.settling {
+  transition: transform 180ms ease-out;
 }
 
 .proposal-card {
@@ -4266,42 +4401,21 @@ blockquote {
   opacity: 1;
 }
 
-.edge-shimmer {
-  --edge-angle: 0deg;
+.busy-perimeter {
   position: absolute;
   inset: 0;
   z-index: 91;
-  box-sizing: border-box;
-  padding: 1.2px;
+  width: 100%;
+  height: 100%;
   border-radius: 42px;
-  background: conic-gradient(from var(--edge-angle), #e8642c, #e39a3c, #c85a7c, #8a6dbe, #e8642c);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
   pointer-events: none;
-  animation: edge-flow 7s linear infinite;
 }
 
-.edge-shimmer::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  box-sizing: border-box;
-  padding: 3.5px;
-  border-radius: inherit;
-  background: inherit;
-  opacity: 0.26;
-  filter: blur(2px);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-}
-
-.native-macos .edge-shimmer {
+.native-macos .busy-perimeter {
   border-radius: 0;
 }
 
-.native-ios .edge-shimmer {
+.native-ios .busy-perimeter {
   border-radius: 52px;
 }
 
@@ -4309,21 +4423,11 @@ blockquote {
   to { offset-distance: 0%; }
 }
 
-@keyframes edge-flow {
-  to { --edge-angle: 360deg; }
-}
-
-@property --edge-angle {
-  syntax: "<angle>";
-  initial-value: 0deg;
-  inherits: false;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .home-greeting,
   .home-greeting > span,
   .busy-dog span,
-  .edge-shimmer {
+  .busy-perimeter {
     animation: none;
   }
 }

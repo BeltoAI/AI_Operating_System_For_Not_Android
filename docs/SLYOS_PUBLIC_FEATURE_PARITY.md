@@ -12,7 +12,7 @@ This file is the non-Android shipping checklist. Android remains the reference b
 | Home prompt/action plan | Live through shared brain planner | Live through shared brain planner | `?screen=home` |
 | Voice call/listening brain | Live visual shell, model key required for live response | Live visual shell, model key required for live response | `?screen=voice` |
 | Auto-reply | Draft/bridge path only | Draft/share/handoff only | `?screen=chat` |
-| Ask memory | Live local brain plus optional Supabase sync | Live local brain plus optional Supabase sync | `?screen=memory` |
+| Ask memory | Live local brain, granular Supabase sync, and automatic Android archive restore | Live local brain, granular Supabase sync, and automatic Android archive restore | `?screen=memory` |
 | Import history | Live local file import into brain | Live file/share import into brain when exposed by native shell | `?screen=imports` |
 | Chat | Live local brain chat; provider response when key is configured | Live local brain chat; provider response when key is configured | `?screen=chat` |
 | Operate phone/device | Local bridge primitives: observe, app open, click, type, hotkey, clipboard, scroll, wait | Shortcuts/App Intents/handoff only; no arbitrary whole-device click-through | `?screen=operate` |
@@ -24,8 +24,9 @@ This file is the non-Android shipping checklist. Android remains the reference b
 | Cowork local agent | Live shell surface; file writes require local bridge allowed roots | Companion chat surface; file writes are app-scoped | `?screen=cowork` |
 | Mission mode | Live mission surface; provider key needed for generated work | Live mission surface; provider key needed for generated work | `?screen=mission` |
 | Investing | Live portfolio brain notes; no trading automation | Live portfolio brain notes; no trading automation | `?screen=investing` |
-| Account/sync | Live Supabase Auth + `brain_items` push/pull | Live Supabase Auth + `brain_items` push/pull | `?screen=backup` |
-| Google Drive backup | Schema-ready only; connector/native integration not finished | Schema-ready only; connector/native integration not finished | `supabase/schema.sql` |
+| Account/sync | Live Supabase Auth, granular brain/settings/vault sync, and private Android `brain.zip` restore | Same; native SQL WASM reads the Android SQLite stores under `file://` | `?screen=backup` |
+| Cloud brain backup | Automatically restores Android `BrainCloud` from private Supabase Storage; manual ZIP import also live | Same | `?screen=backup` |
+| Google Drive backup | No direct Google Drive connector; use Android's Supabase archive or manual file restore | No direct Google Drive connector; Files can provide a manual archive | `?screen=backup` |
 | Bank vault | Live local AES-GCM encrypted vault pointers in brain; Supabase encrypted vault tables are schema-ready | Live local AES-GCM encrypted vault pointers in brain; native Keychain wrapper still needed | `?screen=vault` |
 | API keys/models/cost | Live model provider settings and key validation | Live model provider settings and key validation | `?screen=models` |
 | Floating nav panel | Live bottom SlyOS nav in full-window shell | Live in-app SlyOS nav; system overlays blocked | `?screen=floating-nav` |
@@ -43,3 +44,7 @@ npm run agent
 Then grant the terminal or native runner Accessibility and Screen Recording in macOS Settings. The bridge only listens on `127.0.0.1`, requires a bearer token, and does not enable shell commands unless `SLYOS_ENABLE_SHELL=1`.
 
 For iPhone testing, Developer Mode, a trusted cable connection, and Xcode signing are required for the native app. Whole-device click-through is not possible on iOS; use SlyOS-owned screens, share sheets, camera/imports, App Intents, Shortcuts, and explicit handoff.
+
+## Sync Notes
+
+After account sign-in, SlyOS pulls the granular Android-compatible tables and the private Supabase Storage object `brains/<user-id>/brain.zip`. The archive is imported only when its SHA-256 hash changes. Native Apple builds carry SQL.js WebAssembly inside the app bundle, so Android SQLite memory, message, expense, and network stores can be restored without loading code from the network. API keys and bank-vault plaintext are never copied into portable settings.

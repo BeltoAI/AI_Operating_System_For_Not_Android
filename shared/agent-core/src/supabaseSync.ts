@@ -12,6 +12,21 @@ export interface SyncedVaultEnvelope {
   updatedAt: number;
 }
 
+interface BrainItemRow {
+  kind: MemoryItem["kind"];
+  client_id: string;
+  title: string;
+  body: string | null;
+  data: {
+    owner?: unknown;
+    tags?: string[];
+    source?: string;
+    createdAt?: string;
+  } | null;
+  updated_at: number;
+  created_at: string;
+}
+
 export interface BrainSyncClient {
   signInWithOtp(email: string): Promise<void>;
   signUpWithPassword(email: string, password: string): Promise<void>;
@@ -24,6 +39,7 @@ export interface BrainSyncClient {
   pullSettings(): Promise<SettingsItem[]>;
   pushVault(envelope: SyncedVaultEnvelope): Promise<void>;
   pullVault(): Promise<SyncedVaultEnvelope | null>;
+  pullAndroidBrainArchive(): Promise<Blob | null>;
 }
 
 export function createBrainSyncClient(config: SupabaseSyncConfig): BrainSyncClient {
@@ -85,22 +101,34 @@ class SupabaseBrainSync implements BrainSyncClient {
       deleted: false
     }));
     if (!rows.length) return;
-    const { error } = await this.client.from("brain_items").upsert(rows, { onConflict: "user_id,kind,client_id" });
-    if (error) throw error;
+    for (let offset = 0; offset < rows.length; offset += 200) {
+      const { error } = await this.client
+        .from("brain_items")
+        .upsert(rows.slice(offset, offset + 200), { onConflict: "user_id,kind,client_id" });
+      if (error) throw error;
+    }
   }
 
   async pullMemory(limit = 200): Promise<MemoryItem[]> {
     const userId = await this.requireUser();
-    const { data, error } = await this.client
-      .from("brain_items")
-      .select("kind, client_id, title, body, data, updated_at, created_at, deleted")
-      .eq("user_id", userId)
-      .neq("kind", "setting")
-      .eq("deleted", false)
-      .order("updated_at", { ascending: false })
-      .limit(limit);
-    if (error) throw error;
-    return (data ?? []).map((row) => {
+    const rows: BrainItemRow[] = [];
+    const pageSize = 500;
+    for (let offset = 0; offset < limit; offset += pageSize) {
+      const take = Math.min(pageSize, limit - offset);
+      const { data, error } = await this.client
+        .from("brain_items")
+        .select("kind, client_id, title, body, data, updated_at, created_at, deleted")
+        .eq("user_id", userId)
+        .neq("kind", "setting")
+        .eq("deleted", false)
+        .order("updated_at", { ascending: false })
+        .range(offset, offset + take - 1);
+      if (error) throw error;
+      const page = data ?? [];
+      rows.push(...(page as BrainItemRow[]));
+      if (page.length < take) break;
+    }
+    return rows.map((row) => {
       const androidProfile = row.kind === "profile" && row.client_id === "about";
       const androidChat = row.kind === "chat" && String(row.client_id).startsWith("chat:");
       return {
@@ -179,6 +207,17 @@ class SupabaseBrainSync implements BrainSyncClient {
     if (error) throw error;
     if (!data || data.deleted || typeof data.body !== "string" || typeof data.data?.salt !== "string") return null;
     return { cipherBlob: data.body, salt: data.data.salt, updatedAt: Number(data.updated_at) || 0 };
+  }
+
+  async pullAndroidBrainArchive(): Promise<Blob | null> {
+    const userId = await this.requireUser();
+    const { data, error } = await this.client.storage.from("brains").download(`${userId}/brain.zip`);
+    if (error) {
+      const status = Number((error as { statusCode?: string | number }).statusCode);
+      if (status === 404 || /(?:not found|does not exist|no such object)/i.test(error.message)) return null;
+      throw error;
+    }
+    return data;
   }
 
   private async requireUser(): Promise<string> {

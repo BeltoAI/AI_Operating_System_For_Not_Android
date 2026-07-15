@@ -1,6 +1,20 @@
 import type { MemoryItem } from "@badscientist/agent-core";
 
-export type BrainNodeType = "hub" | "person" | "idea" | "task" | "paper" | "recall" | "network" | "message" | "vault";
+export type BrainNodeType =
+  | "hub"
+  | "project"
+  | "person"
+  | "summary"
+  | "idea"
+  | "task"
+  | "paper"
+  | "recall"
+  | "network"
+  | "prompt"
+  | "response"
+  | "transcript"
+  | "message"
+  | "vault";
 
 export interface BrainNode {
   id: number;
@@ -35,13 +49,18 @@ export interface BrainCanvasOptions {
 }
 
 const TYPE_COLORS: Record<BrainNodeType, string> = {
-  hub: "#e8642c",
+  hub: "#2e2a24",
+  project: "#46403a",
   person: "#9a8b77",
+  summary: "#b09356",
   idea: "#c39a5e",
   task: "#bc6242",
-  paper: "#837c70",
+  paper: "#8c8475",
   recall: "#6e8fa6",
   network: "#2e6f9e",
+  prompt: "#8c8475",
+  response: "#b3ab9c",
+  transcript: "#86907a",
   message: "#b3ab9c",
   vault: "#b23a2e"
 };
@@ -76,33 +95,116 @@ export function buildBrainGraph(items: MemoryItem[]): BrainGraph {
   ];
   const edges: BrainEdge[] = [];
 
-  const ordered = [...items]
-    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
-    .slice(0, 320);
-  const latestByCluster = new Map<string, number>();
+  const ordered = [...items].sort((a, b) => itemTime(a) - itemTime(b));
+  const consumed = new Set<string>();
+  const append = (input: Omit<BrainNode, "id" | "x" | "y">, parent = 0): number => {
+    const id = nodes.length;
+    nodes.push({ ...input, id, x: 0, y: 0 });
+    edges.push({ a: parent, b: id });
+    return id;
+  };
 
+  // Android renders one node per conversation, not one dot per imported message.
+  const people = new Map<string, MemoryItem>();
   for (const item of ordered) {
+    if (!isPersonMemory(item) || item.tags.includes("profile")) continue;
+    const key = item.title.trim().toLowerCase();
+    if (!key) continue;
+    const current = people.get(key);
+    if (!current || messageCount(item) > messageCount(current) || itemTime(item) > itemTime(current)) people.set(key, item);
+  }
+  [...people.values()]
+    .sort((a, b) => messageCount(b) - messageCount(a) || itemTime(b) - itemTime(a))
+    .slice(0, 300)
+    .forEach((item) => {
+      consumed.add(item.id);
+      const count = messageCount(item);
+      append({
+        key: item.id,
+        type: "person",
+        label: trimLabel(item.title, 42),
+        content: count ? `${count} message${count === 1 ? "" : "s"}` : item.body,
+        source: item.source || "Chats",
+        strength: Math.min(0.95, 0.5 + 0.02 * Math.max(1, count)),
+        recency: 0.9
+      });
+    });
+  ordered.filter((item) => isPersonMemory(item)).forEach((item) => consumed.add(item.id));
+
+  const facts = ordered.filter((item) => item.kind === "fact" && !consumed.has(item.id));
+  facts.forEach((item) => {
+    consumed.add(item.id);
+    append({
+      key: item.id,
+      type: "idea",
+      label: trimLabel(item.title || item.body, 34),
+      content: item.body,
+      source: item.source || (item.tags.includes("learned") ? "Learned" : "About you"),
+      strength: item.tags.includes("learned") ? 0.55 : 0.6,
+      recency: item.tags.includes("learned") ? 0.7 : 0.5
+    });
+  });
+
+  // A profile without separate fact rows still becomes calm fact nodes, as it does on Android.
+  if (!facts.length) {
+    ordered.filter((item) => item.tags.includes("profile")).flatMap((item) => item.body.split(/\r?\n/).map((line) => ({ item, line: line.trim() })))
+      .filter(({ line }) => line.length > 0)
+      .forEach(({ item, line }, index) => {
+        consumed.add(item.id);
+        append({ key: `${item.id}:fact:${index}`, type: "idea", label: trimLabel(line, 34), content: line, source: "About you", strength: 0.6, recency: 0.5 });
+      });
+  }
+
+  ordered.filter((item) => isTaskMemory(item)).forEach((item) => {
+    consumed.add(item.id);
+    append({ key: item.id, type: "task", label: trimLabel(item.title, 42), content: item.body, source: item.source || "Checklist", strength: 0.55, recency: 0.6 });
+  });
+  ordered.filter((item) => isPaperMemory(item)).forEach((item) => {
+    consumed.add(item.id);
+    append({ key: item.id, type: "paper", label: trimLabel(item.title, 42), content: item.body || "Research paper", source: item.source || "Research", strength: 0.7, recency: 0.6 });
+  });
+
+  const recallGroups = new Map<string, MemoryItem[]>();
+  ordered.filter((item) => isRecallMemory(item)).forEach((item) => {
+    consumed.add(item.id);
+    const app = (item.source || item.title || "Screen").trim();
+    recallGroups.set(app, [...(recallGroups.get(app) ?? []), item]);
+  });
+  [...recallGroups.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 16).forEach(([app, group]) => {
+    append({
+      key: `recall:${app}`,
+      type: "recall",
+      label: trimLabel(app, 42),
+      content: `${group.length} on-screen capture${group.length === 1 ? "" : "s"}`,
+      source: "Total recall",
+      strength: Math.min(0.9, 0.5 + 0.03 * group.length),
+      recency: 0.8
+    });
+  });
+
+  const network = ordered.filter((item) => isNetworkMemory(item));
+  network.forEach((item) => consumed.add(item.id));
+  if (network.length) {
+    const latest = network.at(-1)!;
+    append({ key: latest.id, type: "network", label: "LinkedIn network", content: latest.body, source: "Network", strength: 0.95, recency: 0.75 });
+  }
+
+  // Raw imported chat rows stay searchable but out of the graph. Android only adds MemoryLog moments.
+  const logs = ordered.filter((item) => !consumed.has(item.id) && !isRawImportedMessage(item)).slice(-300);
+  let lastPromptNode = 0;
+  for (const item of logs) {
     const type = nodeTypeFor(item);
-    const key = item.id;
-    const ageHours = Math.max(0, (Date.now() - Date.parse(item.updatedAt || item.createdAt)) / 36e5);
-    const recency = Math.max(0.18, Math.min(1, 1 - ageHours / (24 * 30)));
-    const strength = Math.max(0.42, Math.min(0.95, 0.48 + item.body.length / 900 + item.tags.length * 0.03));
-    const node: BrainNode = {
-      id: nodes.length,
-      key,
+    const parent = type === "response" && lastPromptNode ? lastPromptNode : 0;
+    const id = append({
+      key: item.id,
       type,
       label: trimLabel(item.title || item.kind, 42),
       content: item.body,
       source: item.source || sourceFor(item),
-      strength,
-      recency,
-      x: 0,
-      y: 0
-    };
-    nodes.push(node);
-    const cluster = graphCluster(item, type);
-    edges.push({ a: latestByCluster.get(cluster) ?? 0, b: node.id });
-    latestByCluster.set(cluster, node.id);
+      strength: 0.5,
+      recency: 0.7
+    }, parent);
+    if (type === "prompt") lastPromptNode = id;
   }
 
   layout(nodes, edges);
@@ -110,14 +212,38 @@ export function buildBrainGraph(items: MemoryItem[]): BrainGraph {
   return { nodes, edges };
 }
 
-function graphCluster(item: MemoryItem, type: BrainNodeType): string {
-  if (item.tags.includes("home-conversation")) return "conversation:home";
-  if (item.tags.includes("checklist") || type === "task") return "tasks";
-  if (item.tags.includes("paper") || type === "paper") return "papers";
-  if (item.tags.includes("network") || type === "network") return "network";
-  if (type === "person") return `people:${(item.source || "people").toLowerCase()}`;
-  const source = (item.source || sourceFor(item) || type).toLowerCase().replace(/\s+/g, "-");
-  return `${type}:${source}`;
+function itemTime(item: MemoryItem): number {
+  const value = Date.parse(item.updatedAt || item.createdAt);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function messageCount(item: MemoryItem): number {
+  const match = item.body.match(/\b(\d[\d,]*)\s+messages?\b/i);
+  return match ? Number(match[1]!.replace(/,/g, "")) || 0 : 0;
+}
+
+function isPersonMemory(item: MemoryItem): boolean {
+  return item.kind === "profile" || item.tags.includes("person");
+}
+
+function isTaskMemory(item: MemoryItem): boolean {
+  return item.tags.includes("task") || item.tags.includes("checklist");
+}
+
+function isPaperMemory(item: MemoryItem): boolean {
+  return item.kind === "paper" || item.tags.includes("paper");
+}
+
+function isRecallMemory(item: MemoryItem): boolean {
+  return item.kind === "screen" || item.tags.includes("recall") || item.tags.includes("screen");
+}
+
+function isNetworkMemory(item: MemoryItem): boolean {
+  return item.tags.includes("network");
+}
+
+function isRawImportedMessage(item: MemoryItem): boolean {
+  return item.id.startsWith("android:message:") || (item.tags.includes("android-import") && item.tags.includes("chat") && !item.id.startsWith("android:log:"));
 }
 
 export function findBrainNode(graph: BrainGraph, key: string | null | undefined): BrainNode | null {
@@ -254,14 +380,12 @@ function render(
     .filter((id): id is number => typeof id === "number");
   const pathSet = new Set(pathIds);
   const terms = (options.query ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 2);
-  const sparseMemoryGraph = options.mode === "memory" && graph.nodes.length < 8;
-
   for (const edge of graph.edges) {
     const a = projected[edge.a];
     const b = projected[edge.b];
     if (!a || !b) continue;
     const hot = selected ? edge.a === selected.id || edge.b === selected.id : false;
-    const alpha = hot ? 0.35 : selected || options.filterType ? 0.05 : dark ? 0.06 : sparseMemoryGraph ? 0.06 : 0.1;
+    const alpha = hot ? 0.35 : selected || options.filterType ? 0.05 : dark ? 0.06 : 0.1;
     ctx.strokeStyle = dark ? `rgba(232,100,44,${hot ? 0.3 : alpha})` : memoryDark ? `rgba(184,174,158,${alpha})` : `rgba(26,23,20,${alpha})`;
     ctx.lineWidth = hot ? 1.4 : dark ? 0.7 : 0.8;
     line(ctx, a.x, a.y, b.x, b.y);
@@ -283,8 +407,8 @@ function render(
         const a = projected[node.id];
         const b = projected[candidate.id];
         if (!a || !b) continue;
-        ctx.strokeStyle = memoryDark ? "rgba(232,100,44,0.18)" : "rgba(232,100,44,0.22)";
-        ctx.lineWidth = 0.9;
+        ctx.strokeStyle = rgba(typeColor(options.filterType), 0.28);
+        ctx.lineWidth = 1.1;
         line(ctx, a.x, a.y, b.x, b.y);
       }
     }
@@ -306,27 +430,26 @@ function render(
     const a = projected[pathIds[segment]!];
     const b = projected[pathIds[segment + 1]!];
     if (a && b) {
-      circle(ctx, a.x + (b.x - a.x) * segmentPhase, a.y + (b.y - a.y) * segmentPhase, 2.4, "#e8642c", 0.96);
+      circle(ctx, a.x + (b.x - a.x) * segmentPhase, a.y + (b.y - a.y) * segmentPhase, 3, "#e8642c", 1);
     }
   }
 
   const sparkCount = options.mode === "voice" ? Math.min(12, graph.edges.length) : 0;
-  const edgeSeed = Math.floor(options.elapsed / (options.mode === "voice" ? 1150 : 1400));
   const flow = ((options.elapsed % (options.mode === "voice" ? 2200 : 1400)) / (options.mode === "voice" ? 2200 : 1400) + 1) % 1;
   for (let index = 0; index < sparkCount; index += 1) {
-    const edge = graph.edges[(edgeSeed * 31 + index * 977) % graph.edges.length];
+    const edge = graph.edges[positiveMod(Math.floor(options.yaw * 9) * 31 + index * 977, graph.edges.length)];
     if (!edge) continue;
     const a = projected[edge.a];
     const b = projected[edge.b];
     if (!a || !b) continue;
     const phase = (flow + index * 0.083) % 1;
-    ctx.strokeStyle = dark ? "rgba(232,100,44,0.16)" : "rgba(232,100,44,0.13)";
-    ctx.lineWidth = dark ? 0.95 : 0.7;
+    ctx.strokeStyle = "rgba(232,100,44,0.30)";
+    ctx.lineWidth = 1.3;
     line(ctx, a.x, a.y, b.x, b.y);
-    circle(ctx, a.x + (b.x - a.x) * phase, a.y + (b.y - a.y) * phase, dark ? 1.7 : 1.25, "#e8642c", 0.9);
+    circle(ctx, a.x + (b.x - a.x) * phase, a.y + (b.y - a.y) * phase, 2.6, "#e8642c", 1);
   }
 
-  const ordered = graph.nodes.map((node) => ({ node, pos: projected[node.id] })).filter((entry) => entry.pos).sort((a, b) => (a.pos?.depth ?? 0) - (b.pos?.depth ?? 0));
+  const ordered = graph.nodes.map((node) => ({ node, pos: projected[node.id] })).filter((entry) => entry.pos).sort((a, b) => (b.pos?.depth ?? 0) - (a.pos?.depth ?? 0));
   for (const { node, pos } of ordered) {
     if (!pos) continue;
     const matchesQuery =
@@ -338,22 +461,33 @@ function render(
       (!matchesQuery && node.type !== "hub" && !inPath);
     const selectedNode = node.key === options.selectedKey;
     const radius = (options.mode === "voice" ? 2.5 : 4) + node.strength * (options.mode === "voice" ? 6 : 7);
-    const r = radius * pos.depth;
-    const color = selectedNode || inPath || node.type === "hub" ? "#e8642c" : nodeColor(node);
-    const alpha = dim ? 0.14 : clamp(0.45 + pos.depth * 0.55, 0.3, 1);
+    const r = radius * pos.depth * (options.mode === "memory" ? pos.scale : 1);
+    const color = selectedNode || inPath || node.type === "hub"
+      ? "#e8642c"
+      : options.mode === "voice"
+        ? platformColor(node.source)
+        : nodeColor(node);
+    const alpha = dim ? 0.16 : options.mode === "voice" ? clamp(0.45 + pos.depth * 0.55, 0.3, 1) : 1;
     circle(ctx, pos.x, pos.y, r, color, alpha);
-    ctx.strokeStyle = dark || memoryDark ? `rgba(244,239,230,${0.08 * alpha})` : `rgba(26,23,20,${0.12 * alpha})`;
-    ctx.lineWidth = selectedNode || inPath ? 1.5 : 0.65;
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, selectedNode || inPath ? r + 4 : r, 0, Math.PI * 2);
-    ctx.stroke();
+    if (options.mode === "memory") {
+      ctx.strokeStyle = memoryDark ? `rgba(184,174,158,${0.12 * alpha})` : `rgba(26,23,20,${0.12 * alpha})`;
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      if (selectedNode || inPath) {
+        ctx.strokeStyle = "#e8642c";
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, r + 5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
     if (options.mode !== "voice" && (node.type === "hub" || selectedNode || inPath || options.zoom > 1.4)) {
       ctx.fillStyle = memoryDark ? "rgba(244,239,230,0.72)" : "rgba(92,84,75,0.82)";
-      ctx.font = node.type === "hub"
-        ? "22px Caveat, 'Segoe Script', cursive"
-        : "12px -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif";
+      ctx.font = "10.5px -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(trimLabel(node.label, node.type === "hub" ? 32 : 24), pos.x, pos.y + r + (node.type === "hub" ? 22 : 14));
+      ctx.fillText(trimLabel(node.label, 22), pos.x, pos.y + r + 13);
     }
   }
 }
@@ -377,7 +511,7 @@ function hitTest(
     if (options.filterType && node.type !== "hub" && node.type !== options.filterType) continue;
     const pos = projected[node.id];
     if (!pos) continue;
-    const radius = (8 + node.strength * 13) * pos.depth;
+    const radius = (13 + node.strength * 13) * pos.depth;
     if (Math.hypot(x - pos.x, y - pos.y) <= radius && (!best || pos.depth > best.depth)) {
       best = { node, depth: pos.depth };
     }
@@ -393,16 +527,19 @@ function projectAll(
   tilt: number,
   zoom: number,
   mode: "memory" | "voice"
-): Array<{ x: number; y: number; depth: number } | undefined> {
-  const extentPercentile = mode === "voice" ? 0.72 : 0.88;
-  const rawExt = percentile(graph.nodes.map((node) => Math.hypot(node.x, node.y)), extentPercentile);
-  const minExt = mode === "voice" ? 260 : 1;
-  const ext = Math.max(minExt, rawExt);
-  const radius = mode === "voice" ? Math.min(width * 0.54, height * 0.48) : Math.min(width * 0.46, height * 0.43);
-  const scale = (radius / Math.max(1, ext + (mode === "memory" ? 18 : 0))) * zoom;
+): Array<{ x: number; y: number; depth: number; scale: number } | undefined> {
+  const minDimension = Math.min(width, height);
+  const ext = mode === "voice"
+    ? percentile(graph.nodes.map((node) => Math.max(Math.abs(node.x), Math.abs(node.y))), 0.72)
+    : Math.max(1, ...graph.nodes.map((node) => Math.max(Math.abs(node.x), Math.abs(node.y))));
+  // Android targets 440 physical pixels in a roughly 760px graph box. Expressing that same
+  // 0.58 ratio against this responsive canvas preserves the phone composition on Mac and iOS.
+  const scale = (mode === "voice"
+    ? minDimension * 0.6 / Math.max(1, ext)
+    : clamp(minDimension * 0.58 / (ext + 60), 0.2, 1)) * zoom;
   const cx = width / 2;
-  const cy = height * (mode === "voice" ? 0.54 : 0.52);
-  return graph.nodes.map((node) => project(node, cx, cy, scale, yaw, tilt, mode === "memory" ? ext : null));
+  const cy = height / 2;
+  return graph.nodes.map((node) => project(node, cx, cy, scale, yaw, tilt));
 }
 
 function project(
@@ -411,35 +548,28 @@ function project(
   cy: number,
   scale: number,
   yaw: number,
-  tilt: number,
-  radialLimit: number | null
-): { x: number; y: number; depth: number } {
-  const radial = Math.hypot(node.x, node.y);
-  const fit = radialLimit && radial > radialLimit ? radialLimit / radial : 1;
-  const sourceX = node.x * fit;
-  const sourceY = node.y * fit;
+  tilt: number
+): { x: number; y: number; depth: number; scale: number } {
   const z = depthZ(node.id);
   const ca = Math.cos(yaw);
   const sa = Math.sin(yaw);
-  const x2 = sourceX * ca - z * sa;
-  const z2 = sourceX * sa + z * ca;
+  const x2 = node.x * ca - z * sa;
+  const z2 = node.x * sa + z * ca;
   const ct = Math.cos(tilt);
   const st = Math.sin(tilt);
-  const y2 = sourceY * ct - z2 * st;
-  const z3 = sourceY * st + z2 * ct;
+  const y2 = node.y * ct - z2 * st;
+  const z3 = node.y * st + z2 * ct;
   const focal = 1100;
   const depth = clamp(focal / (focal - z3), 0.45, 1.9);
-  return { x: cx + x2 * scale * depth, y: cy + y2 * scale * depth, depth };
+  return { x: cx + x2 * scale * depth, y: cy + y2 * scale * depth, depth, scale };
 }
 
 function layout(nodes: BrainNode[], edges: BrainEdge[]): void {
+  const rnd = javaRandom(7);
   for (const node of nodes) {
-    const rnd = seededRandom(hashString(`layout:${node.key}`));
     node.x = (rnd() - 0.5) * 700;
     node.y = (rnd() - 0.5) * 700;
   }
-  nodes[0]!.x = 0;
-  nodes[0]!.y = 0;
   const minGap = 46;
   const iterations = nodes.length > 120 ? 70 : 600;
   for (let iter = 0; iter < iterations; iter += 1) {
@@ -494,7 +624,7 @@ function layout(nodes: BrainNode[], edges: BrainEdge[]): void {
 function addSynapses(nodes: BrainNode[], edges: BrainEdge[]): void {
   const ids = nodes.filter((node) => node.type !== "hub").map((node) => node.id);
   if (ids.length < 3) return;
-  const seen = new Set<string>(edges.map((edge) => `${Math.min(edge.a, edge.b)}:${Math.max(edge.a, edge.b)}`));
+  const seen = new Set<string>();
   for (const id of ids) {
     const a = nodes[id];
     if (!a) continue;
@@ -514,20 +644,28 @@ function addSynapses(nodes: BrainNode[], edges: BrainEdge[]): void {
 
 function nodeTypeFor(item: MemoryItem): BrainNodeType {
   if (item.kind === "profile" || item.tags.includes("person")) return "person";
+  if (item.tags.includes("project")) return "project";
+  if (item.tags.includes("summary")) return "summary";
   if (item.tags.includes("task")) return "task";
   if (item.kind === "paper" || item.tags.includes("paper")) return "paper";
-  if (item.tags.includes("agent-response") || item.kind === "screen") return "recall";
+  if (item.kind === "screen") return "recall";
   if (item.tags.includes("network")) return "network";
-  if (item.kind === "message" || item.kind === "chat") return "message";
+  if (item.tags.includes("agent-response") || item.tags.includes("response")) return "response";
+  if (item.tags.includes("prompt") || item.tags.includes("home-prompt")) return "prompt";
+  if (item.kind === "message" || item.kind === "chat") return "transcript";
   if (item.kind === "vault") return "vault";
   return "idea";
 }
 
 function nodeColor(node: BrainNode): string {
   if (node.type === "person") {
-    return PLATFORM_COLORS.find(([pattern]) => pattern.test(node.source))?.[1] ?? TYPE_COLORS.person;
+    return platformColor(node.source);
   }
   return TYPE_COLORS[node.type] ?? TYPE_COLORS.idea;
+}
+
+function platformColor(source: string): string {
+  return PLATFORM_COLORS.find(([pattern]) => pattern.test(source))?.[1] ?? TYPE_COLORS.person;
 }
 
 function sourceFor(item: MemoryItem): string {
@@ -538,7 +676,6 @@ function sourceFor(item: MemoryItem): string {
 }
 
 function depthZ(id: number): number {
-  if (id === 0) return 0;
   const hash = (id * 374761393 + 668265263) | 0;
   return ((hash & 0x7fffffff) % 640) - 320;
 }
@@ -576,20 +713,22 @@ function average(values: number[]): number {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
 
-function hashString(value: string): number {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
-  }
-  return hash;
+function javaRandom(seed: number): () => number {
+  let state = (BigInt(seed) ^ 0x5deece66dn) & ((1n << 48n) - 1n);
+  return () => {
+    state = (state * 0x5deece66dn + 0xbn) & ((1n << 48n) - 1n);
+    return Number(state >> 24n) / 0x1000000;
+  };
 }
 
-function seededRandom(seed: number): () => number {
-  let state = seed || 1;
-  return () => {
-    state = (state * 1664525 + 1013904223) >>> 0;
-    return state / 0x100000000;
-  };
+function rgba(hex: string, alpha: number): string {
+  const raw = hex.replace("#", "");
+  const value = Number.parseInt(raw, 16);
+  return `rgba(${(value >> 16) & 255},${(value >> 8) & 255},${value & 255},${alpha})`;
+}
+
+function positiveMod(value: number, modulus: number): number {
+  return ((value % modulus) + modulus) % modulus;
 }
 
 function trimLabel(value: string, limit: number): string {

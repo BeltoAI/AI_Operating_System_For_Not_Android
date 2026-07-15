@@ -30,7 +30,7 @@ What works today:
 - An in-app Diagnostics surface plus local JSONL/host logs for startup, sync, memory, provider, and device-control evidence.
 - Prompt-to-device control primitives: observe screen, front app, clipboard, click, type, hotkey, scroll, and wait.
 - Shared TypeScript agent contracts for memory, planning, actions, and sync.
-- A Supabase schema, migration, local config, readiness check, and DB apply script for optional cross-device memory and settings sync.
+- A Supabase schema, migration, local config, readiness check, and DB apply script for cross-device memory, settings, encrypted-vault metadata, and Android archive restore.
 - A native iOS SwiftUI/WebKit shell with App Intents, Shortcuts handoffs, camera/microphone bridges, contacts, calendar, reminders, files/imports, and Apple Foundation Models when available.
 - Platform folders for macOS, Linux, Windows, iOS, and Android reference notes.
 - Documentation for parity, roadmap, setup, and Android baseline limits.
@@ -119,6 +119,8 @@ The app:
 - includes generated SlyOS icons and a bundled WebKit app shell.
 
 After UI edits, run `npm run macos:app` again.
+
+The native build packages the shell as one validated inline ES module. `npm run apple:sync-web` fails if the generated HTML is incomplete, references an external entry script, or lacks the SlyOS mount point. This prevents a damaged bundle from opening as a screen of JavaScript source.
 
 For observe-click-type control, open `Brain -> Settings -> Device permissions`, select `Request Mac access`, approve both `Screen Recording` and `Accessibility`, then quit and reopen SlyOS once. The app tests the real permission state and `Brain -> Settings -> Diagnostics` records the result. Install one canonical copy at `/Applications/SlyOS.app`; registering multiple unpacked copies with the same bundle identifier can create stale macOS permission records. See `docs/RUNTIME_DIAGNOSTICS.md`.
 
@@ -316,6 +318,9 @@ Already in this repo:
 - Explicit `grant` statements expose the intended tables to authenticated users.
 - `shared/agent-core/src/supabaseSync.ts` contains the browser client sync adapter.
 - The desktop shell has a setup UI for URL, publishable key, email/password auth, push brain, and pull brain.
+- A signed-in client checks the Android-compatible private Storage object at `brains/<user-id>/brain.zip`, restores it once per archive hash, and converts profile, memory log, messages, tasks, papers, contacts, expenses, network count, and Cowork text into the portable cross-device brain.
+- Brain backup also accepts a manually selected Android `slyos-brain-*.zip` when the cloud archive is unavailable.
+- Native Apple bundles inline the SQL.js WebAssembly runtime so Android SQLite databases can be read under `file://` without a network request.
 - `npm run db:check` checks local DB readiness without printing secrets.
 - `npm run db:apply` applies the schema when `SUPABASE_DB_URL` is set.
 
@@ -329,6 +334,13 @@ Still required for self-hosted deployments:
 6. Sign in before pushing or pulling memory.
 
 Never put a Supabase service-role key in this repo or in browser/mobile clients.
+
+Android production has two sync layers. `BrainSync` uploads granular profile, chat, and encrypted-vault
+records, while `BrainCloud` stores the complete private `brains/<user-id>/brain.zip` archive. Mac and
+iPhone now pull both layers after sign-in. The archive restores Android-only local stores, and the
+converted portable records are then queued for granular Supabase sync. A manual ZIP import remains
+available under `Brain -> Settings -> Brain backup`. See
+[`tools/data-migration/README.md`](tools/data-migration/README.md) for the exact workflow and limits.
 
 Apply the schema from the terminal when you have a DB URL:
 

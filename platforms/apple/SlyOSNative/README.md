@@ -21,6 +21,8 @@ Then rebuild/sync:
 npm run apple:sync-web
 ```
 
+The sync step creates one validated inline ES module for native WebKit and removes the external entry file. It aborts if the HTML is incomplete, the SlyOS mount point is missing, or an external entry script remains. Native builds also inline SQL.js WebAssembly so Android SQLite brain archives work from `file://`.
+
 ## Run On This Mac
 
 ```bash
@@ -53,4 +55,6 @@ This refreshes `Assets.xcassets/AppIcon.appiconset`, the macOS `.icns` source ic
 
 ## Supabase
 
-Public native resources are built without project-specific Supabase defaults. Use the app's Setup screen to paste the project URL and publishable key, or run a local dev build with your own ignored `.env`.
+The reference build pre-fills the public SlyOS Supabase URL and publishable key so account sign-in works on first launch. These are client-safe identifiers, not service-role secrets. Forks can replace them at build time with `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, or change them from the app's Account & sync screen.
+
+Signed-in Apple clients pull Android-compatible granular records plus the private `brains/<user-id>/brain.zip` Storage archive. The archive is deduplicated by SHA-256, converted locally, and its portable records are queued for granular cross-device sync.

@@ -145,6 +145,9 @@ function capabilities() {
     listDir: true,
     readFile: true,
     writeFile: true,
+    writeFileBase64: true,
+    openFile: true,
+    deviceStatus: true,
     appendFile: true,
     makeDir: true,
     moveFile: true,
@@ -284,6 +287,15 @@ async function handleAction(action) {
       assertString(action.path, "path");
       assertString(action.content, "content");
       return writeAllowedFile(action.path, action.content, Boolean(action.overwrite));
+    case "write_file_base64":
+      assertString(action.path, "path");
+      assertString(action.base64, "base64");
+      return writeAllowedBase64File(action.path, action.base64, Boolean(action.overwrite));
+    case "open_file":
+      assertString(action.path, "path");
+      return openAllowedFile(action.path);
+    case "device_status":
+      return deviceStatus();
     case "append_file":
       assertString(action.path, "path");
       assertString(action.content, "content");
@@ -323,6 +335,49 @@ async function openApp(app) {
     return;
   }
   await execPlatform("gtk-launch", [app]).catch(() => execPlatform("xdg-open", [app]));
+}
+
+async function deviceStatus() {
+  if (os === "darwin") {
+    const { stdout } = await execPlatform("/usr/bin/pmset", ["-g", "batt"]);
+    const percentage = stdout.match(/(\d{1,3})%/);
+    const powerSource = stdout.match(/Now drawing from '([^']+)'/);
+    return {
+      batteryLevel: percentage ? Math.min(100, Number(percentage[1])) : null,
+      charging: /\b(charging|charged)\b/i.test(stdout),
+      powerSource: powerSource?.[1] ?? "unknown"
+    };
+  }
+
+  if (os === "linux") {
+    const root = "/sys/class/power_supply";
+    const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+    const battery = entries.find((entry) => entry.isDirectory() && /^BAT/i.test(entry.name));
+    if (!battery) return { batteryLevel: null, charging: false, powerSource: "unknown" };
+    const capacity = await readFile(resolve(root, battery.name, "capacity"), "utf8").catch(() => "");
+    const status = await readFile(resolve(root, battery.name, "status"), "utf8").catch(() => "");
+    const level = Number.parseInt(capacity.trim(), 10);
+    return {
+      batteryLevel: Number.isFinite(level) ? Math.min(100, Math.max(0, level)) : null,
+      charging: /\b(charging|full)\b/i.test(status),
+      powerSource: status.trim() || "unknown"
+    };
+  }
+
+  if (os === "win32") {
+    const { stdout } = await runPowerShell(
+      "$b = Get-CimInstance Win32_Battery | Select-Object -First 1 EstimatedChargeRemaining,BatteryStatus; if ($null -eq $b) { '{}' } else { $b | ConvertTo-Json -Compress }"
+    );
+    const battery = JSON.parse(stdout.trim() || "{}");
+    const level = Number(battery.EstimatedChargeRemaining);
+    return {
+      batteryLevel: Number.isFinite(level) ? Math.min(100, Math.max(0, level)) : null,
+      charging: [2, 6, 7, 8, 9, 11].includes(Number(battery.BatteryStatus)),
+      powerSource: battery.BatteryStatus ? "battery" : "unknown"
+    };
+  }
+
+  return { batteryLevel: null, charging: false, powerSource: "unknown" };
 }
 
 async function listApps() {
@@ -1346,6 +1401,34 @@ async function writeAllowedFile(inputPath, content, overwrite) {
   return { path: targetPath, bytes: Buffer.byteLength(content, "utf8") };
 }
 
+async function writeAllowedBase64File(inputPath, base64, overwrite) {
+  const targetPath = requireAllowedPath(inputPath);
+  const clean = String(base64).replace(/\s+/g, "");
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(clean)) throw new Error("File payload is not valid base64.");
+  const content = Buffer.from(clean, "base64");
+  if (!content.length) throw new Error("File payload is empty.");
+  if (content.length > 24 * 1024 * 1024) throw new Error("Generated file exceeds the 24 MB write limit.");
+  await mkdir(dirname(targetPath), { recursive: true });
+  if (!overwrite) {
+    try {
+      await stat(targetPath);
+      throw new Error("File already exists. Pass overwrite: true to replace it.");
+    } catch (error) {
+      if (error && error.code !== "ENOENT") throw error;
+    }
+  }
+  await writeFile(targetPath, content);
+  return { path: targetPath, bytes: content.length };
+}
+
+async function openAllowedFile(inputPath) {
+  const targetPath = requireAllowedPath(inputPath);
+  const metadata = await stat(targetPath);
+  if (!metadata.isFile()) throw new Error("Path is not a file.");
+  await execPlatform(openCommand(), openArgs(targetPath));
+  return { opened: targetPath };
+}
+
 async function appendAllowedFile(inputPath, content) {
   const targetPath = requireAllowedPath(inputPath);
   await mkdir(dirname(targetPath), { recursive: true });
@@ -1702,7 +1785,7 @@ function readJson(request) {
     request.setEncoding("utf8");
     request.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 1_000_000) {
+      if (body.length > 34_000_000) {
         reject(new Error("Request body too large."));
         request.destroy();
       }
