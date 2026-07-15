@@ -322,12 +322,41 @@ async function openUrl(url) {
   if (!["http:", "https:", "mailto:", "tel:", "sms:", "facetime:"].includes(parsed.protocol)) {
     throw new Error("Only http, https, mailto, tel, sms, and FaceTime URLs are allowed.");
   }
+  if (os === "darwin" && parsed.protocol === "mailto:") {
+    await openMacMailDraft(parsed);
+    return;
+  }
   await execPlatform(openCommand(), openArgs(url));
+  if (os === "darwin" && parsed.protocol === "sms:") await activateMacApplication("Messages");
+}
+
+async function openMacMailDraft(url) {
+  const to = decodeURIComponent(url.pathname || "").trim().slice(0, 320);
+  const subject = String(url.searchParams.get("subject") || "").trim().slice(0, 320);
+  const body = String(url.searchParams.get("body") || "").trim().slice(0, 100_000);
+  const script = String.raw`
+const mail = Application("Mail");
+mail.activate();
+const message = mail.OutgoingMessage({
+  subject: ${JSON.stringify(subject)},
+  content: ${JSON.stringify(body ? `${body}\n` : "")},
+  visible: true
+});
+mail.outgoingMessages.push(message);
+if (${JSON.stringify(to)}) {
+  message.toRecipients.push(mail.ToRecipient({ address: ${JSON.stringify(to)} }));
+}
+message.visible = true;
+mail.activate();
+JSON.stringify({ drafted: true, recipient: ${JSON.stringify(to)}, subject: ${JSON.stringify(subject)} });`;
+  const { stdout } = await execPlatform("osascript", ["-l", "JavaScript", "-e", script], { timeout: 20000 });
+  return parseNativeJson(stdout, "Mail could not open the draft. Check that Mail has an account and allow Automation for SlyOS.");
 }
 
 async function openApp(app) {
   if (os === "darwin") {
     await execPlatform("open", ["-a", app]);
+    await activateMacApplication(app);
     return;
   }
   if (os === "win32") {
@@ -335,6 +364,11 @@ async function openApp(app) {
     return;
   }
   await execPlatform("gtk-launch", [app]).catch(() => execPlatform("xdg-open", [app]));
+}
+
+async function activateMacApplication(app) {
+  const script = `Application(${JSON.stringify(app)}).activate();`;
+  await execPlatform("osascript", ["-l", "JavaScript", "-e", script], { timeout: 5000 });
 }
 
 async function deviceStatus() {

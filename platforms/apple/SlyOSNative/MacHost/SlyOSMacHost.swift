@@ -99,6 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     func applicationDidBecomeActive(_ notification: Notification) {
         showWindow()
+        publishPermissionStatus(label: "active")
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -135,6 +136,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let accessibilityOptions = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         let accessibility = AXIsProcessTrustedWithOptions(accessibilityOptions)
         logLocal("permissions.requested screen=\(screen) accessibility=\(accessibility)")
+        for delay in [0.5, 2.0, 5.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.publishPermissionStatus(label: "request-\(delay)s")
+            }
+        }
+    }
+
+    private func publishPermissionStatus(label: String) {
+        let screen = CGPreflightScreenCaptureAccess()
+        let accessibility = AXIsProcessTrusted()
+        logLocal("permissions.\(label) screen=\(screen) accessibility=\(accessibility)")
+        let script = """
+        window.dispatchEvent(new CustomEvent('slyos-mac-permissions-changed', {
+          detail: { screenRecording: \(screen ? "true" : "false"), accessibility: \(accessibility ? "true" : "false") }
+        }));
+        """
+        webView?.evaluateJavaScript(script)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -251,10 +269,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         do {
             try killer.run()
             killer.waitUntilExit()
-            if killer.terminationStatus == 0 { logLocal("agent.stale-terminated") }
+            if killer.terminationStatus == 0 {
+                logLocal("agent.stale-terminated")
+                waitForStaleDeviceAgentToExit(at: executable)
+            }
         } catch {
             logLocal("agent.stale-check-error \(error.localizedDescription)")
         }
+    }
+
+    private func waitForStaleDeviceAgentToExit(at executable: URL) {
+        for _ in 0..<20 {
+            let probe = Process()
+            probe.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+            probe.arguments = ["-f", executable.path]
+            probe.standardOutput = FileHandle.nullDevice
+            probe.standardError = FileHandle.nullDevice
+            do {
+                try probe.run()
+                probe.waitUntilExit()
+                if probe.terminationStatus != 0 { return }
+            } catch {
+                logLocal("agent.stale-wait-error \(error.localizedDescription)")
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.1)
+        }
+        logLocal("agent.stale-wait-timeout")
     }
 
     private func diagnosticsDirectory() -> URL {

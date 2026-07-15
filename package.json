@@ -25,6 +25,7 @@
     "release:desktop-agent": "node tools/release/build-desktop-agent.mjs",
     "release:macos-app": "node tools/release/build-macos-app.mjs",
     "release:web": "node tools/release/build-web-pwa.mjs",
+    "test:unit": "node --experimental-strip-types --test platforms/desktop-shell/test/*.test.ts",
     "typecheck": "npm run typecheck --workspaces"
   },
   "engines": {

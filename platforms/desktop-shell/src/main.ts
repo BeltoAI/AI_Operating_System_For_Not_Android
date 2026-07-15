@@ -38,6 +38,7 @@ import {
   type ArtifactSlide,
   type ArtifactSpec
 } from "./artifactFiles";
+import { emailSubjectFromContext, parseOutboundPrompt } from "./outbound";
 import "@fontsource/roboto/latin-300.css";
 import "@fontsource/roboto/latin-400.css";
 import "@fontsource/roboto/latin-500.css";
@@ -198,6 +199,7 @@ interface NowTask {
   app: string;
   pkg?: string;
   text: string;
+  subject?: string;
   draft?: string;
   status: NowTaskStatus;
   createdAt: string;
@@ -968,9 +970,23 @@ setTimeout(() => {
   window.setTimeout(() => void runPrompt(), 80);
 };
 
+repairMalformedOutboundRecords();
 render();
 registerServiceWorker();
 void initializeRuntime();
+
+if (nativePlatform === "macos") {
+  const refreshMacPermissions = () => {
+    void refreshDevicePermissions()
+      .then(() => render())
+      .catch((error) => recordDiagnostic("bridge", "error", `Permission refresh failed: ${error instanceof Error ? error.message : String(error)}`));
+  };
+  window.addEventListener("focus", refreshMacPermissions);
+  window.addEventListener("slyos-mac-permissions-changed", refreshMacPermissions);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshMacPermissions();
+  });
+}
 
 async function initializeRuntime(): Promise<void> {
   recordDiagnostic("runtime", "info", `SlyOS started on ${platformLabel()}.`);
@@ -1002,6 +1018,7 @@ async function initializeRuntime(): Promise<void> {
         syncStatus = `Signed in · ${syncUserId.slice(0, 8)}`;
         recordDiagnostic("sync", "ok", "Restored the account session.");
         await pullRemoteBrain("startup");
+        repairMalformedOutboundRecords();
       } else {
         syncStatus = "Configured · not signed in";
         recordDiagnostic("sync", "info", "Supabase is configured, but no account session is signed in.");
@@ -3505,6 +3522,49 @@ function nowTasks(): NowTask[] {
 
 function saveNowTasks(tasks: NowTask[]): void {
   writeJsonStorage(nowTasksKey, tasks.filter(isNowTask).slice(0, 200));
+}
+
+function repairMalformedOutboundRecords(): void {
+  const now = new Date().toISOString();
+  const storedTasks = readJsonStorage<NowTask[]>(nowTasksKey, []).filter(isNowTask);
+  let tasksChanged = false;
+  const repairedTasks = storedTasks.map((task) => {
+    if (task.app !== "Mail") return task;
+    const email = task.contact.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
+    if (!email || task.contact.trim().toLowerCase() === email.toLowerCase()) return task;
+    const reparsed = parseOutboundPrompt(task.text);
+    tasksChanged = true;
+    return {
+      ...task,
+      contact: email,
+      text: reparsed.contact.toLowerCase() === email.toLowerCase() ? reparsed.context : task.text,
+      subject: task.subject || emailSubjectFromContext(reparsed.context, email),
+      updatedAt: now
+    };
+  });
+  if (tasksChanged) saveNowTasks(repairedTasks);
+
+  const storedOutbox = readJsonStorage<OutboxRecord[]>(outboxKey, []).filter(isOutboxRecord);
+  let outboxChanged = false;
+  const repairedOutbox = storedOutbox.map((record) => {
+    if (record.channel !== "Mail") return record;
+    const email = record.target.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
+    if (!email || record.target.trim().toLowerCase() === email.toLowerCase()) return record;
+    outboxChanged = true;
+    return { ...record, title: `Draft for ${email}`, target: email, updatedAt: now };
+  });
+  if (outboxChanged) saveOutboxRecords(repairedOutbox);
+
+  for (const item of memoryStore.list()) {
+    const email = item.title.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
+    if (!email || !/telling\s+(?:him|her|them)/i.test(item.title)) continue;
+    const title = item.title.startsWith("Outbox: Draft for")
+      ? `Outbox: Draft for ${email}`
+      : item.title.startsWith("SlyOS: Draft staged for")
+        ? `SlyOS: Draft staged for ${email}. Open Now to review.`
+        : item.title;
+    if (title !== item.title) memoryStore.upsert({ ...item, title, updatedAt: now });
+  }
 }
 
 function isNowTask(value: unknown): value is NowTask {
@@ -7559,8 +7619,10 @@ function wireEvents(): void {
     const nativeWindow = window as Window & { slyosRequestMacPermissions?: () => void };
     if (typeof nativeWindow.slyosRequestMacPermissions === "function") {
       nativeWindow.slyosRequestMacPermissions();
-      deviceBridgeStatus = "Follow the macOS prompts, then relaunch SlyOS once for Screen Recording.";
-      window.setTimeout(() => void deviceAction(refreshDevicePermissions), 2500);
+      deviceBridgeStatus = "Approve the macOS prompts, then return to SlyOS. This status refreshes automatically.";
+      for (const delay of [1200, 3500, 8000]) {
+        window.setTimeout(() => void refreshDevicePermissions().then(() => render()).catch(() => undefined), delay);
+      }
       render();
       return;
     }
@@ -7681,6 +7743,7 @@ async function stageOutboundRequest(prompt: string): Promise<NowTask> {
     contact: parsed.contact,
     app: parsed.app,
     text: parsed.context,
+    ...(parsed.app === "Mail" ? { subject: emailSubjectFromContext(parsed.context, parsed.contact) } : {}),
     status: "waiting",
     createdAt: now,
     updatedAt: now,
@@ -7841,26 +7904,6 @@ function isOutboundRequest(prompt: string): boolean {
   return /\b(send|text|dm|message|email|reply)\b/i.test(prompt);
 }
 
-function parseOutboundPrompt(prompt: string): { app: string; contact: string; context: string } {
-  const app = /\bemail\b/i.test(prompt) ? "Mail" : /\bdm\b/i.test(prompt) ? "X" : "Messages";
-  const direct = prompt.match(
-    /\b(?:text|message|dm|email|reply to|send(?: an)? email to)\s+(.+?)(?:\s+(?:that|saying|about|and)\s+|:\s*|$)(.*)$/i
-  );
-  const toTarget = prompt.match(/\bto\s+(.+?)(?:\s+(?:that|saying|about|and)\s+|:\s*|$)(.*)$/i);
-  const match = direct ?? toTarget;
-  const contact = cleanOutboundContact(match?.[1] ?? "Someone");
-  const context = (match?.[2] ?? "").trim();
-  return { app, contact, context: context || prompt };
-}
-
-function cleanOutboundContact(value: string): string {
-  return value
-    .replace(/^(?:to|at)\s+/i, "")
-    .replace(/[.,;:!?]+$/g, "")
-    .trim()
-    .slice(0, 60) || "Someone";
-}
-
 async function openTaskDraft(id: string): Promise<void> {
   const task = nowTasks().find((item) => item.id === id);
   if (!task || !task.draft) return;
@@ -7897,7 +7940,7 @@ async function openTaskDraft(id: string): Promise<void> {
       if (nativePlatform === "macos") {
         const payload = await deviceFetch("/actions", {
           method: "POST",
-          body: JSON.stringify({ type: "send_email", to: destination, subject: task.text.slice(0, 80), body: task.draft })
+          body: JSON.stringify({ type: "send_email", to: destination, subject: task.subject || task.text.slice(0, 80), body: task.draft })
         });
         const message = String(payload.result?.message ?? `Sent email to ${destination}.`);
         recordOutbox({
@@ -7915,7 +7958,7 @@ async function openTaskDraft(id: string): Promise<void> {
         render();
         return;
       }
-      await openEmailDraft({ to: destination, subject: task.text.slice(0, 80), body: task.draft });
+      await openEmailDraft({ to: destination, subject: task.subject || task.text.slice(0, 80), body: task.draft });
     } else if (task.app === "Messages") {
       const destination = await resolveDraftDestination(task.contact, "phone");
       if (nativePlatform === "macos") {
@@ -8207,10 +8250,12 @@ function dispatchSwipeAction(action: string): void {
 
 async function openHomeAnswer(): Promise<void> {
   const answerUrl = agentAnswer.match(/https?:\/\/[^\s]+/i)?.[0]?.replace(/[),.;]+$/, "");
-  const latestPrompt = [...homeConversation()].reverse().find((turn) => turn.role === "user")?.body ?? agentAnswer.slice(0, 120);
-  const url = answerUrl || `https://www.google.com/search?q=${encodeURIComponent(latestPrompt)}`;
+  if (!answerUrl) {
+    if (/\b(?:draft|confirmation|open now|waiting in now)\b/i.test(agentAnswer)) navigate("now");
+    return;
+  }
   try {
-    await openExternalUrl(url);
+    await openExternalUrl(answerUrl);
   } catch (error) {
     agentAnswer = error instanceof Error ? error.message : String(error);
     render();
@@ -10289,7 +10334,24 @@ async function runPrompt(): Promise<void> {
     render();
     try {
       const staged = await stageOutboundRequest(request);
-      agentAnswer = `Draft staged for ${staged.contact}. Open Now to review, send, or close it.`;
+      let openedInApp = false;
+      if (staged.app === "Mail" && staged.draft) {
+        try {
+          const destination = await resolveDraftDestination(staged.contact, "email");
+          await openEmailDraft({
+            to: destination,
+            subject: staged.subject || emailSubjectFromContext(staged.text, staged.contact),
+            body: staged.draft
+          });
+          openedInApp = true;
+          recordDiagnostic("bridge", "ok", `Opened an unsent Mail draft for ${destination}.`);
+        } catch (error) {
+          recordDiagnostic("bridge", "error", `Mail draft stayed in Now: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      agentAnswer = openedInApp
+        ? `Draft opened in Mail for ${staged.contact}. The final send is waiting in Now for confirmation.`
+        : `Draft staged for ${staged.contact}. Open Now to review, send, or close it.`;
       rememberHomeTurn("assistant", agentAnswer, ["agent-response", "outbound-draft"]);
       recordDiagnostic("brain", "ok", "Outbound action held in Now for confirmation.");
     } catch (error) {
