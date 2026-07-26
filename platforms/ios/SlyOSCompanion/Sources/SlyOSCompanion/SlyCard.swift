@@ -20,6 +20,10 @@ struct SlyCard<Content: View>: View {
 
     @Environment(\.palette) private var p
     @State private var dragX: CGFloat = 0
+    /// Decided once per gesture. A card often wraps a vertical ScrollView, and a drag that keeps
+    /// re-deciding its axis mid-stroke is what makes the movement feel like it is stuttering
+    /// between the two.
+    @State private var axisLocked: Bool?
 
     private let commit: CGFloat = 130
     private let maxTravel: CGFloat = 320
@@ -38,30 +42,57 @@ struct SlyCard<Content: View>: View {
     }
 
     /// Behind the card: the two things the gesture can do, lit as you approach them.
+    ///
+    /// The labels fade in proportion to the drag rather than snapping at a threshold — a hard
+    /// switch reads as a glitch, a ramp reads as the card responding to you.
     private var revealLayer: some View {
         HStack {
             Text("Open ↗")
                 .font(.system(size: T.small))
-                .foregroundStyle(dragX > 20 ? p.accent : p.hairline)
+                .foregroundStyle(p.accent)
+                .opacity(reveal(dragX))
             Spacer()
             Text("Close ✕")
                 .font(.system(size: T.small))
-                .foregroundStyle(dragX < -20 ? p.danger : p.hairline)
+                .foregroundStyle(p.danger)
+                .opacity(reveal(-dragX))
         }
         .padding(.horizontal, 22)
     }
 
+    /// 0 until the drag is clearly deliberate, then ramping to full by the commit point.
+    private func reveal(_ x: CGFloat) -> Double {
+        guard x > 12 else { return 0 }
+        return Double(min(1, (x - 12) / (commit - 12)))
+    }
+
     private var swipe: some Gesture {
-        DragGesture(minimumDistance: 12)
+        // 18pt before anything moves: below that a stroke is far more likely to be the start of a
+        // scroll, and claiming it is what makes a list feel like it is fighting you.
+        DragGesture(minimumDistance: 18)
             .onChanged { value in
-                // Horizontal only: a vertical drag belongs to the scroll view, and stealing it makes
-                // the whole list feel like it is fighting you.
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                dragX = min(maxTravel, max(-maxTravel, value.translation.width))
+                if axisLocked == nil {
+                    // Commit to an axis on the first meaningful movement and stay there.
+                    axisLocked = abs(value.translation.width) > abs(value.translation.height) * 1.4
+                }
+                guard axisLocked == true else { return }
+
+                // Resistance past the commit point: the card keeps following your finger but
+                // increasingly reluctantly, so the threshold is something you can feel.
+                let raw = value.translation.width
+                let over = max(0, abs(raw) - commit)
+                let eased = (abs(raw) - over * 0.55) * (raw < 0 ? -1 : 1)
+                dragX = min(maxTravel, max(-maxTravel, eased))
             }
             .onEnded { _ in
                 let committed = dragX
-                withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) { dragX = 0 }
+                let wasHorizontal = axisLocked == true
+                axisLocked = nil
+                guard wasHorizontal else { return }
+
+                // Snap back first, then act. Firing the callback before the card has moved makes
+                // the content change underneath a card still sitting off-centre.
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { dragX = 0 }
                 if committed < -commit { onClose?() }
                 else if committed > commit { onOpen?() }
             }

@@ -62,6 +62,7 @@ struct HomePanel: View {
     @State private var thinking = false
     @State private var failure: String?
     @State private var copied = false
+    @State private var answerHeight: CGFloat = 0
     @State private var reading = false
     @State private var lastQuery = ""
     @State private var voice = VoiceInput.shared
@@ -244,9 +245,16 @@ struct HomePanel: View {
                         .font(.system(size: T.body)).foregroundStyle(p.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    ScrollView { AnswerView(text: answer) }
-                        .frame(maxHeight: 420)
-                        .scrollIndicators(.hidden)
+                    // A ScrollView always claims its maximum height, so wrapping every answer in
+                    // one made a single line 420pt tall. Measure the content and only scroll when
+                    // it genuinely overflows.
+                    AnswerView(text: answer)
+                        .background(GeometryReader { geo in
+                            Color.clear.preference(key: ContentHeight.self, value: geo.size.height)
+                        })
+                        .frame(maxHeight: 420, alignment: .top)
+                        .modifier(ScrollIfNeeded(height: answerHeight, cap: 420))
+                        .onPreferenceChange(ContentHeight.self) { answerHeight = $0 }
 
                     HStack(spacing: 10) {
                         // A long answer gets a proper reader rather than being trapped in the card.
@@ -351,5 +359,32 @@ struct ReaderView: View {
         }
         .environment(\.palette, p)
         .preferredColorScheme(settings.dark ? .dark : .light)
+    }
+}
+
+
+/// Measured height of an answer's content.
+private struct ContentHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// Scroll only when the content is actually taller than the cap.
+///
+/// SwiftUI's ScrollView does not shrink-wrap: put a one-line answer in one with `maxHeight: 420`
+/// and you get 420 points of mostly empty card. This keeps short answers hugging their content and
+/// only introduces scrolling where it is needed.
+private struct ScrollIfNeeded: ViewModifier {
+    let height: CGFloat
+    let cap: CGFloat
+
+    func body(content: Content) -> some View {
+        if height > cap {
+            ScrollView { content }
+                .frame(height: cap)
+                .scrollIndicators(.hidden)
+        } else {
+            content
+        }
     }
 }
