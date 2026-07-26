@@ -11,6 +11,26 @@ import Observation
 /// is the only reason it is honest to say your documents stay on your phone.
 enum LookMode {
 
+    /// Shrink a photo to something a vision model will actually accept.
+    ///
+    /// A full iPhone frame is 3–5MB, and base64 inflates it by a third — comfortably past
+    /// Anthropic's 5MB per-image limit, which is why Look failed on a key that answered text fine.
+    /// 1568px on the long edge is Anthropic's own recommended maximum; beyond it they downscale
+    /// anyway, so sending more costs upload time and buys nothing.
+    static func prepareForVision(_ data: Data, maxEdge: CGFloat = 1568) -> Data {
+        guard let image = UIImage(data: data) else { return data }
+        let longest = max(image.size.width, image.size.height)
+        guard longest > maxEdge else {
+            return image.jpegData(compressionQuality: 0.8) ?? data
+        }
+        let scale = maxEdge / longest
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let shrunk = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+        return shrunk.jpegData(compressionQuality: 0.8) ?? data
+    }
+
+
     /// Pull text out of an image. Accurate rather than fast — a misread total on a receipt is worse
     /// than a slow scan.
     static func text(in image: UIImage) async -> String {

@@ -190,7 +190,9 @@ struct LookScreen: View {
             }
             do {
                 if mode.needsVision {
-                    let answer = try await AgentClient.look(at: jpeg, question: mode.question)
+                    // Resized first — the raw frame is past every provider's per-image limit.
+                    let sized = LookMode.prepareForVision(jpeg)
+                    let answer = try await AgentClient.look(at: sized, question: mode.question)
                     let lines = answer.split(separator: "\n", maxSplits: 1)
                     let title = lines.first.map(String.init) ?? "Look"
                     let body = lines.count > 1 ? String(lines[1]).trimmingCharacters(in: .whitespacesAndNewlines) : ""

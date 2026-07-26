@@ -141,6 +141,7 @@ enum AgentClient {
             contain the answer, say so in one sentence and say what would be needed — do not \
             invent, and do not infer an action happened because it was discussed.
             """
+            // Appended where the context is described, so "the material above" has an antecedent.
             if lastCorpusWasUntrusted { s += Untrusted.clause }
         } else {
             s += """
