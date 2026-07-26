@@ -158,6 +158,8 @@ final class NowFeed {
 struct NowPanel: View {
     @Environment(\.palette) private var p
     @State private var feed = NowFeed()
+    @State private var showOutbox = false
+    @State private var showReconnect = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -182,17 +184,21 @@ struct NowPanel: View {
         }
         .padding(.horizontal, T.md)
         .task { await feed.load() }
+        .sheet(isPresented: $showOutbox) { OutboxView() }
+        .sheet(isPresented: $showReconnect) { ReconnectView() }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: T.xs) {
             Heading("Now")
-            HStack {
+            HStack(spacing: 14) {
                 Text(Date.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                    .font(.system(size: T.body)).foregroundStyle(p.inkFaint)
+                    .font(.system(size: T.caption)).foregroundStyle(p.inkFaint)
                 Spacer()
-                Button("Refresh") { Task { await feed.load() } }
-                    .font(.system(size: T.body)).foregroundStyle(p.inkSoft)
+                Button("Sent for you") { showOutbox = true }
+                    .font(.system(size: T.caption)).foregroundStyle(p.inkSoft)
+                Button("Reconnect") { showReconnect = true }
+                    .font(.system(size: T.caption)).foregroundStyle(p.inkSoft)
             }
         }
         .padding(.top, T.md)
