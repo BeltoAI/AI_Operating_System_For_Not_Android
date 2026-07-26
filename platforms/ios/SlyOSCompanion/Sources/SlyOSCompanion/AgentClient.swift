@@ -38,10 +38,35 @@ enum AgentClient {
                 "Identifying needs a model that can see. Add an Anthropic, OpenAI or Gemini key — "
                 + "reading text off the page works without one."
             case .allFailed(let reasons):
-                "Every provider failed. \(reasons.joined(separator: " · "))"
+                // One line per provider, already summarised — the raw JSON from three failing APIs
+                // is thousands of characters of nothing anyone can act on.
+                "No provider could answer.\n" + reasons.map { "· " + $0 }.joined(separator: "\n")
             case .badResponse(let code, let body):
-                "The model refused that (\(code)): \(body.prefix(200))"
+                AgentClient.humanise(code: code, body: body)
             }
+        }
+    }
+
+    /// Turn a provider's error into something the owner can act on.
+    ///
+    /// Every one of these has a different remedy, and the raw body says so in a paragraph of JSON
+    /// that buries it. The status code is usually enough to know which.
+    static func humanise(code: Int, body: String) -> String {
+        switch code {
+        case 401, 403:
+            return "that key was rejected — check it in Settings"
+        case 429:
+            return body.lowercased().contains("quota")
+                ? "you're out of credit on that account"
+                : "too many requests just now — try again in a moment"
+        case 400:
+            return body.lowercased().contains("model")
+                ? "that model name isn't valid for this account"
+                : "the request was refused"
+        case 500...599:
+            return "the provider is having problems"
+        default:
+            return "failed (\(code))"
         }
     }
 
@@ -53,6 +78,7 @@ enum AgentClient {
         let system = groundedSystemPrompt(hasContext: !context.isEmpty)
             + profileBlock()
             + (await placeBlock(for: question))
+            + (await agendaBlock(for: question))
         let user = context.isEmpty
             ? question
             : "WHAT YOU KNOW:\n\(context)\n\nQUESTION: \(question)"
@@ -75,11 +101,18 @@ enum AgentClient {
                                       system: system, user: user)
             } catch {
                 // Record and move on. One dead provider must never mean no answer.
-                failures.append("\(provider.label): \(error.localizedDescription)")
+                failures.append("\(provider.label): \(short(error))")
                 continue
             }
         }
         throw ClientError.allFailed(failures)
+    }
+
+    /// A one-line version of whatever went wrong.
+    private static func short(_ error: Error) -> String {
+        if case let ClientError.badResponse(code, body) = error { return humanise(code: code, body: body) }
+        if (error as NSError).domain == NSURLErrorDomain { return "couldn't reach it" }
+        return error.localizedDescription
     }
 
     // MARK: - Grounding
@@ -140,6 +173,25 @@ enum AgentClient {
     /// Gated rather than always-on: taking a location fix for "summarise this email" would waste
     /// power and ask for a permission the question never needed. If location is refused this
     /// silently contributes nothing.
+    /// Reads today's agenda, injected by the app at launch. Same reason as location: the calendar
+    /// lives behind EventKit, which an app extension cannot reach.
+    nonisolated(unsafe) static var agendaResolver: (() async -> String?)?
+
+    /// What is actually on, when the question is about that.
+    ///
+    /// Without this the model answers "I don't have access to your calendar" while sitting on a
+    /// brain full of imported events — because a question like "what's on today" matches nothing by
+    /// keyword, and the events it should find are dated today rather than named it.
+    private static func agendaBlock(for question: String) async -> String {
+        let q = question.lowercased()
+        let asks = ["what's on", "whats on", "my day", "today", "tomorrow", "this week",
+                    "schedule", "calendar", "agenda", "meeting", "free time", "busy"]
+            .contains { q.contains($0) }
+        guard asks, let resolver = agendaResolver, let agenda = await resolver(),
+              !agenda.isEmpty else { return "" }
+        return "\n\nWHAT IS ACTUALLY ON — read from the calendar just now:\n\(agenda)"
+    }
+
     /// Resolves the owner's location, injected by the app at launch.
     ///
     /// A closure rather than a direct call to `LocationProvider`, because that reaches `Permissions`
@@ -214,7 +266,7 @@ enum AgentClient {
                                            key: router.key(for: provider),
                                            base64: base64, question: question)
             } catch {
-                failures.append("\(provider.label): \(error.localizedDescription)")
+                failures.append("\(provider.label): \(short(error))")
                 continue
             }
         }

@@ -11,15 +11,9 @@ struct ResearchPanel: View {
     enum Mode: String, CaseIterable, Identifiable {
         case newPaper = "New paper"
         case chat = "Chat"
-        case cowork = "Cowork"
-        case team = "Team"
 
         var id: String { rawValue }
 
-        /// Cowork and Team drive Android's multi-agent runner, which has no iPhone equivalent yet.
-        /// They stay on the bar so the two apps read the same, and say so when opened rather than
-        /// pretending to work.
-        var availableOnIOS: Bool { self == .newPaper || self == .chat }
     }
 
     @State private var mode: Mode = .newPaper
@@ -45,7 +39,6 @@ struct ResearchPanel: View {
                 switch mode {
                 case .newPaper: newPaperBody
                 case .chat: ChatMode(palette: p)
-                default: unavailable
                 }
             }
 
@@ -175,18 +168,6 @@ struct ResearchPanel: View {
         .scrollIndicators(.hidden)
     }
 
-    private var unavailable: some View {
-        VStack(alignment: .leading, spacing: T.sm) {
-            Text("\(mode.rawValue) is Android only, for now.")
-                .font(.system(size: 24)).foregroundStyle(p.ink)
-                .padding(.top, T.lg)
-            Text("It runs several agents at once against your brain, which needs background "
-                 + "execution iOS doesn't grant. It's on the list — it isn't pretending to work here.")
-                .font(.system(size: T.body)).foregroundStyle(p.inkFaint)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     // MARK: - Work
 
     private func reload() {
@@ -245,6 +226,11 @@ private struct PaperView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(SlySettings.self) private var settings
 
+    @State private var publishing = false
+    @State private var note: String?
+    @State private var isError = false
+    @State private var confirming = false
+
     var body: some View {
         let p = Palette(dark: settings.dark)
         NavigationStack {
@@ -254,8 +240,41 @@ private struct PaperView: View {
                     Text(paper.date.formatted(date: .abbreviated, time: .shortened))
                         .font(.system(size: T.caption)).foregroundStyle(p.inkFaint)
                     AnswerView(text: paper.body, showHero: false)
+
+                    Divider().overlay(p.hairline).padding(.vertical, T.sm)
+
+                    if publishing {
+                        SlyWaiting("publishing to Zenodo")
+                    } else if let note {
+                        Text(note)
+                            .font(.system(size: T.small))
+                            .foregroundStyle(isError ? p.danger : p.good)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+
+                    if Zenodo.shared.isConfigured {
+                        Button { confirming = true } label: {
+                            Text("Publish to Zenodo")
+                                .font(.system(size: T.small, weight: .medium))
+                                .foregroundStyle(p.bgElevated)
+                                .padding(.horizontal, T.lg).padding(.vertical, 11)
+                                .background(Capsule().fill(p.accent))
+                        }
+                        .disabled(publishing)
+                    } else {
+                        Text("Add a Zenodo token in Settings to publish this with a real DOI.")
+                            .font(.system(size: T.caption)).foregroundStyle(p.inkFaint)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(T.md)
+            }
+            .alert("Publish this paper?", isPresented: $confirming) {
+                Button("Cancel", role: .cancel) {}
+                Button("Publish") { send() }
+            } message: {
+                Text("It gets a permanent DOI on zenodo.org under CC-BY. Publishing can't be undone.")
             }
             .background(p.bg.ignoresSafeArea())
             .toolbar {
@@ -266,6 +285,31 @@ private struct PaperView: View {
         }
         .environment(\.palette, p)
         .preferredColorScheme(settings.dark ? .dark : .light)
+    }
+
+    private func send() {
+        publishing = true; note = nil
+        Task {
+            do {
+                let out = try await Zenodo.shared.publish(
+                    title: paper.title,
+                    body: paper.body,
+                    author: SlyProfile.shared.value("full_name").isEmpty
+                        ? SlySettings.shared.name : SlyProfile.shared.value("full_name"),
+                    affiliation: SlyProfile.shared.value("occupation"),
+                    publish: true)
+                isError = false
+                note = "Published — DOI \(out.doi)\n\(out.url)"
+                Outbox.shared.record(what: "Published a paper",
+                                     detail: "\(paper.title) — \(out.url)", outcome: "sent")
+            } catch {
+                isError = true
+                note = error.localizedDescription
+                Outbox.shared.record(what: "Publish failed",
+                                     detail: error.localizedDescription, outcome: "failed")
+            }
+            publishing = false
+        }
     }
 }
 

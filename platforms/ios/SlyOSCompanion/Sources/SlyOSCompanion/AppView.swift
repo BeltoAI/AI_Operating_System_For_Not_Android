@@ -39,6 +39,11 @@ struct AppView: View {
             .padding(.horizontal, T.md)
         }
         .background(p.bg.ignoresSafeArea())
+        // Every panel: dragging anywhere puts the keyboard away, and a tap outside a field does
+        // too. Without this the Memory tab traps you — there is no Done key on a search field and
+        // the nav bar sits underneath the keyboard.
+        .scrollDismissesKeyboard(.interactively)
+        .onTapGesture { dismissKeyboard() }
         .environment(\.palette, p)
         // Android drives dark mode from its own store rather than the OS, so the two devices agree.
         .preferredColorScheme(settings.dark ? .dark : .light)
@@ -401,4 +406,15 @@ private struct ScrollIfNeeded: ViewModifier {
             content
         }
     }
+}
+
+
+/// Put the keyboard away from anywhere.
+///
+/// SwiftUI has no first-class "resign everything", and a search field has no Done key — so on a
+/// screen whose only other controls sit behind the keyboard, there is otherwise no way out but to
+/// kill the app.
+func dismissKeyboard() {
+    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                    to: nil, from: nil, for: nil)
 }

@@ -112,6 +112,8 @@ struct SettingsPanel: View {
 
                     group("OPENCLAW", p: p) { OpenClawSection(palette: p) }
 
+                    group("ZENODO", p: p) { ZenodoSection(palette: p) }
+
                     group("IMPORT", p: p) {
                         VStack(alignment: .leading, spacing: 0) {
                             Text("Everything imported stays on this phone.")
@@ -680,5 +682,51 @@ private struct AutonomySection: View {
             knownOnly = autonomy.onlyKnownContacts
             limit = autonomy.dailyLimit
         }
+    }
+}
+
+
+/// Zenodo — the token that turns a paper into a citable record with a DOI.
+private struct ZenodoSection: View {
+    let palette: Palette
+    @State private var token = ""
+    @State private var saved = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: T.sm) {
+            Text("Publish papers to CERN's open repository with a real DOI. Needs a personal access "
+                 + "token with deposit:write and deposit:actions.")
+                .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: T.sm) {
+                Link(destination: URL(string: "https://zenodo.org/account/settings/applications/tokens/new/")!) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "key.fill").font(.system(size: 12))
+                        Text("Get a token").font(.system(size: T.small, weight: .medium))
+                    }
+                    .foregroundStyle(palette.bgElevated)
+                    .padding(.horizontal, T.md).padding(.vertical, 9)
+                    .background(Capsule().fill(palette.accent))
+                }
+                SecureField("", text: $token, prompt:
+                    Text("paste it here").foregroundStyle(palette.inkFaint))
+                    .font(.system(size: T.small))
+                    .foregroundStyle(palette.ink)
+                    .textFieldStyle(.plain)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .onChange(of: token) { _, new in
+                        Zenodo.shared.token = new
+                        saved = !new.isEmpty
+                    }
+                if saved || Zenodo.shared.isConfigured {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 15)).foregroundStyle(palette.good)
+                }
+            }
+            Rectangle().fill(palette.hairline).frame(height: 1)
+        }
+        .onAppear { token = Zenodo.shared.token }
     }
 }

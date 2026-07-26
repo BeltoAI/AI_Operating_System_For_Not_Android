@@ -38,6 +38,7 @@ struct BrainPanel: View {
             }
         }
         .padding(.horizontal, T.md)
+        .scrollDismissesKeyboard(.interactively)
         .task { await load() }
         .sheet(isPresented: $showSettings) { SettingsPanel() }
     }
@@ -71,7 +72,10 @@ struct BrainPanel: View {
                 .padding(.horizontal, T.md).padding(.vertical, 12)
                 .background(RoundedRectangle(cornerRadius: 12).fill(p.bgElevated.opacity(0.5)))
 
-            Button(action: runAsk) {
+            Button {
+                dismissKeyboard()
+                runAsk()
+            } label: {
                 Text(asking ? "…" : "Ask")
                     .font(.system(size: T.body))
                     .foregroundStyle(p.ink)
@@ -169,6 +173,7 @@ struct BrainPanel: View {
     private func runAsk() {
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return }
+        dismissKeyboard()
         answer = ""; failure = nil; asking = true
         Task {
             do { answer = try await AgentClient.ask(q) }
