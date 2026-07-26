@@ -1,60 +1,76 @@
-# iOS
+# SlyOS for iPhone
 
-Recommended shape: native SwiftUI/WebKit companion app.
+Native SwiftUI, in `SlyOSCompanion/`.
 
-There is now an editable Xcode project generator:
+This replaces the earlier WebKit approach in `platforms/apple/SlyOSNative`, which wrapped the
+desktop shell's web build in a `WKWebView`. That could never match the Compose design — it would
+only ever match whatever the web app looked like — and App Review treats thin web wrappers as
+minimum-functionality rejections under Guideline 4.2.
+
+Design tokens are shared with the Android app in `MADSCIENTIST/agentos`: the Kotlin
+`theme/Tokens.kt` is the source of truth, mirrored in `SlyTheme.swift` and in
+`shared/design-tokens/tokens.json`. Change a colour in one, change it in all three, or the two
+phones stop looking like the same product.
+
+## Building
+
+The Xcode project is generated from `project.yml`:
 
 ```bash
-npm run apple:xcode
-open platforms/apple/SlyOSNative/SlyOSNative.xcodeproj
+brew install xcodegen
+cd platforms/ios/SlyOSCompanion && xcodegen generate && open SlyOS.xcodeproj
 ```
 
-Select `SlyOS-iOS`, choose the connected iPhone 15 Pro Max, set your signing team, and press Run.
+Minimum iOS 17 — `@Observable` and the SF Symbols 5 glyphs both require it.
 
-The iPhone build uses WebKit to run the same SlyOS shell built from `platforms/desktop-shell/src`, so UI edits flow into the iPhone app after `npm run apple:sync-web` or `npm run apple:xcode`.
+## What it needs before it does anything
 
-Full Xcode is required for cabled iPhone install. This Mac currently has Command Line Tools only, which can generate/edit the project but cannot deploy to the phone.
+None of this is in the repo, because none of it is ours to ship:
 
-This folder also contains the earlier SwiftUI/App Intents source scaffold in:
+| Thing | Where it goes | Without it |
+|---|---|---|
+| **AI provider key** | Settings → Intelligence, in the app | Nothing answers. Groq, Gemini, Cerebras and Mistral have free tiers |
+| **Google iOS OAuth client id** | `project.yml` → `INFOPLIST_KEY_GoogleOAuthClientID` | No Calendar, Meet or Gmail. Must be an **iOS** client — Google ties the redirect scheme to the client type, so the Android id is rejected |
+| **Apple Team ID** | `project.yml` → `DEVELOPMENT_TEAM` | Simulator only; cannot install on a device or submit |
+| **App icon** | `Assets.xcassets` | The App Store rejects the build |
 
-```text
-SlyOSCompanion/Sources/SlyOSCompanion
-```
+Tokens live in the Keychain, never `UserDefaults` — a refresh token is a long-lived key to
+someone's mail and calendar, and `UserDefaults` ends up in unencrypted backups.
 
-Closest parity surfaces:
+## What the brain is made of
 
-- SwiftUI app shell
-- App Intents
-- Siri Shortcuts
-- Share Extension
-- widgets
-- camera Look
-- receipt/document ingestion
-- memory search and recall
-- explicit action drafts
-- calendar and reminders with permission
-- App Intent / Shortcut handoff for tasks that need system action
+`SlyStore` is SQLite with a real FTS5 index, filled by:
 
-Known limits:
+- **Contacts** and **Calendar** — on-device, no account needed (`Importers.swift`)
+- **Look mode** — camera or photo, read on-device with Vision (`LookMode.swift`)
+- **Anything typed or spoken**, from Home or Siri
+- **Gmail and Google Calendar**, once the OAuth client id is set
 
-- no launcher replacement
-- no broad notification listener equivalent
-- no general auto-reply layer across all apps
-- no arbitrary cross-app screen control
-- no background SMS automation
+Two Android bugs are fixed here by construction, with comments explaining why: integers are bound as
+integers (SQLite's type affinity sorts every integer below every string, so a numeric comparison
+bound as TEXT is silently always false, which returned zero rows against a 24,000-message table),
+and search ranks by **who** rather than by **when**.
 
-Important takeover note: iOS cannot support Android-style whole-device click-through from a third-party app. The closest honest path is SlyOS-native flows, App Intents, Shortcuts, Share Extensions, widgets, URL schemes, notifications, camera/import, and explicit user handoff when the OS blocks automation.
+## What iOS cannot do
 
-Use that scaffold as reference when adding true App Intents, Shortcuts, widgets, and Share Extension targets to the generated native Apple project.
+Three things the Android build does are impossible here at any entitlement level:
 
-Current cabled-device build step:
+- **Read other apps' notifications.** There is no `NotificationListenerService` equivalent. This is
+  why the Android brain fills itself from WhatsApp, Instagram and LinkedIn and this one cannot.
+- **Replace the home screen.** iOS has no launcher concept.
+- **Operate the phone for you.** No accessibility automation of other apps.
 
-1. Install full Xcode.
-2. Run `npm run apple:xcode`.
-3. Open `platforms/apple/SlyOSNative/SlyOSNative.xcodeproj`.
-4. Select `SlyOS-iOS`.
-5. Set your signing team.
-6. Choose the connected iPhone.
-7. Press Run.
+The Powers panel states all three outright rather than quietly omitting them, and the brain's empty
+state lists only sources iOS can genuinely provide.
 
-The iOS build should be honest: a powerful companion, not a fake Android launcher.
+Reply drafting is still reachable, one tap away rather than automatically — via a keyboard
+extension, the share sheet, or screenshot OCR. Those are not built yet.
+
+## Permissions
+
+Declared in `project.yml`, requested at the point of need in `Permissions.swift`, and each one backs
+a feature that visibly uses it. Requesting permissions the app does not obviously use is a
+Guideline 5.1.1 rejection, so the Powers panel exists partly to make each grant's purpose visible.
+
+Speech recognition is forced on-device wherever the language supports it. The default recogniser
+uploads audio to Apple, which would contradict the entire premise of the product.

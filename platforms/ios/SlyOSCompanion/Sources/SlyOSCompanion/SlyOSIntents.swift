@@ -76,8 +76,8 @@ struct SlyOSShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: OpenSlyOSIntent(),
             phrases: [
-                "Open SlyOS",
-                "Ask SlyOS in \(.applicationName)"
+                "Open \(.applicationName)",
+                "Ask \(.applicationName)"
             ],
             shortTitle: "Ask SlyOS",
             systemImageName: "sparkles"
@@ -87,17 +87,17 @@ struct SlyOSShortcuts: AppShortcutsProvider {
             intent: RememberInSlyOSIntent(),
             phrases: [
                 "Remember this in \(.applicationName)",
-                "Save to SlyOS"
+                "Save to \(.applicationName)"
             ],
             shortTitle: "Remember",
-            systemImageName: "brain.head.profile"
+            systemImageName: "memorychip.fill"
         )
 
         AppShortcut(
             intent: OpenSlyOSMemoryIntent(),
             phrases: [
-                "Open SlyOS memory",
-                "Show my SlyOS brain"
+                "Open \(.applicationName) memory",
+                "Show my \(.applicationName) brain"
             ],
             shortTitle: "Memory",
             systemImageName: "brain"

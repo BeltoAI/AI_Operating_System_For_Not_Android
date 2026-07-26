@@ -1,11 +1,35 @@
 import Foundation
 import Observation
+import UIKit
 
 @Observable
 final class AppState {
-    var selectedTab: AppTab = .home
+    var selectedTab: Panel = .home
+    /// Badge on the Now tab — unhandled notifications, as on Android.
+    var nowCount: Int = 0
+    /// Greeting name. Android reads this from the profile in its brain; iOS will too once the
+    /// brain lands, and until then it is whatever onboarding captured.
+    var userName: String = "there"
+
+    /// The two ends of the Home status line, e.g. "Sat 8:17 PM" and "100%".
+    var statusLeft: String {
+        Date.now.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+    }
+
+    /// Battery percentage, as Android shows it. `batteryMonitoringEnabled` has to be switched on
+    /// or `batteryLevel` reports -1 forever; the simulator reports -1 regardless, hence the guard.
+    var statusRight: String {
+        let level = UIDevice.current.batteryLevel
+        guard level >= 0 else { return "" }
+        return "\(Int((level * 100).rounded()))%"
+    }
     var memories: [MemoryEntry] = []
     var actionQueue: [PlannedAction] = []
+
+    init() {
+        // Without this, `batteryLevel` returns -1 forever.
+        UIDevice.current.isBatteryMonitoringEnabled = true
+    }
 
     func plan(prompt: String) {
         let lower = prompt.lowercased()
@@ -31,11 +55,12 @@ final class AppState {
         actionQueue = actions
     }
 
-    func remember(title: String, body: String) {
-        memories.insert(
-            MemoryEntry(title: title.isEmpty ? "Untitled" : title, body: body),
-            at: 0
-        )
+    /// Commit something to the brain. Writes to the real store — an in-memory array looked like it
+    /// worked right up until you relaunched the app and everything you had told it was gone.
+    func remember(title: String, body: String, source: String = "typed") {
+        let text = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        SlyStore.shared.insert(kind: "note", title: title, body: text, source: source)
     }
 
     func handle(intent: AppIntentRouter.HandledIntent) {
@@ -46,10 +71,10 @@ final class AppState {
                 plan(prompt: prompt)
             }
         case .openMemory:
-            selectedTab = .memory
+            selectedTab = .brain
         case .remember(let text):
             remember(title: "From Shortcuts", body: text)
-            selectedTab = .memory
+            selectedTab = .brain
         }
     }
 }
