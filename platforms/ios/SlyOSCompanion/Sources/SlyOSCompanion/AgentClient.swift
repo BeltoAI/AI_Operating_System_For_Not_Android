@@ -23,6 +23,8 @@ enum AgentClient {
 
     enum ClientError: LocalizedError {
         case noProvider
+        case noVisionProvider
+        case malformedImage
         case allFailed([String])
         case badResponse(Int, String)
 
@@ -30,6 +32,11 @@ enum AgentClient {
             switch self {
             case .noProvider:
                 "No AI provider is set up yet. Add a key in Settings — Groq, Gemini and Cerebras have free tiers."
+            case .malformedImage:
+                "That photo didn't come through properly."
+            case .noVisionProvider:
+                "Identifying needs a model that can see. Add an Anthropic, OpenAI or Gemini key — "
+                + "reading text off the page works without one."
             case .allFailed(let reasons):
                 "Every provider failed. \(reasons.joined(separator: " · "))"
             case .badResponse(let code, let body):
@@ -185,6 +192,97 @@ enum AgentClient {
             used += line.count
         }
         return out.joined(separator: "\n")
+    }
+
+    // MARK: - Vision
+
+    /// Ask about an image.
+    ///
+    /// Routed only to providers that can actually see — a photo sent to a text model becomes a
+    /// prompt with no picture in it, and the model answers confidently about nothing.
+    static func look(at jpeg: Data, question: String,
+                     tier: ModelRouter.Tier = .standard) async throws -> String {
+        let router = ModelRouter.shared
+        let providers = router.chain(tier: tier, needsVision: true)
+        guard !providers.isEmpty else { throw ClientError.noVisionProvider }
+
+        let base64 = jpeg.base64EncodedString()
+        var failures: [String] = []
+        for provider in providers {
+            do {
+                return try await sendImage(provider: provider, model: provider.model(for: tier),
+                                           key: router.key(for: provider),
+                                           base64: base64, question: question)
+            } catch {
+                failures.append("\(provider.label): \(error.localizedDescription)")
+                continue
+            }
+        }
+        throw ClientError.allFailed(failures)
+    }
+
+    /// Each provider wraps images differently; the text half is identical to a normal call.
+    private static func sendImage(provider: ModelRouter.Provider, model: String, key: String,
+                                  base64: String, question: String) async throws -> String {
+        var req: URLRequest
+        var body: [String: Any]
+
+        switch provider {
+        case .anthropic:
+            req = URLRequest(url: URL(string: provider.endpoint)!)
+            req.setValue(key, forHTTPHeaderField: "x-api-key")
+            req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+            body = [
+                "model": model, "max_tokens": 1024,
+                "messages": [["role": "user", "content": [
+                    ["type": "image",
+                     "source": ["type": "base64", "media_type": "image/jpeg", "data": base64]],
+                    ["type": "text", "text": question]
+                ]]]
+            ]
+
+        case .gemini:
+            req = URLRequest(url: URL(string: "\(provider.endpoint)/\(model):generateContent?key=\(key)")!)
+            body = ["contents": [["parts": [
+                ["inline_data": ["mime_type": "image/jpeg", "data": base64]],
+                ["text": question]
+            ]]]]
+
+        default:
+            req = URLRequest(url: URL(string: provider.endpoint)!)
+            req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+            body = [
+                "model": model, "max_tokens": 1024,
+                "messages": [["role": "user", "content": [
+                    ["type": "image_url",
+                     "image_url": ["url": "data:image/jpeg;base64,\(base64)"]],
+                    ["type": "text", "text": question]
+                ]]]
+            ]
+        }
+
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 90
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let json = try await fire(req)
+        switch provider {
+        case .anthropic:
+            let blocks = json["content"] as? [[String: Any]] ?? []
+            return blocks.compactMap { $0["text"] as? String }.joined()
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        case .gemini:
+            let candidates = json["candidates"] as? [[String: Any]] ?? []
+            let parts = (candidates.first?["content"] as? [String: Any])?["parts"] as? [[String: Any]] ?? []
+            return parts.compactMap { $0["text"] as? String }.joined()
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        default:
+            let choices = json["choices"] as? [[String: Any]] ?? []
+            let message = choices.first?["message"] as? [String: Any]
+            return ((message?["content"] as? String) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
     }
 
     // MARK: - Providers

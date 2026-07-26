@@ -67,6 +67,7 @@ struct HomePanel: View {
     @State private var lastQuery = ""
     @State private var voice = VoiceInput.shared
     @State private var showScanner = false
+    @State private var showLook = false
     @State private var showPhotoPicker = false
     @State private var pickedPhoto: PhotosPickerItem?
     @FocusState private var promptFocused: Bool
@@ -86,6 +87,7 @@ struct HomePanel: View {
         .onChange(of: voice.transcript) { _, heard in
             if voice.isListening { prompt = heard }
         }
+        .fullScreenCover(isPresented: $showLook) { LookScreen() }
         .sheet(isPresented: $showScanner) {
             DocumentScanner { pages in
                 Task { await readPages(pages) }
@@ -168,7 +170,7 @@ struct HomePanel: View {
             }
             .accessibilityLabel("Read a photo")
 
-            Button { showScanner = true } label: {
+            Button { showLook = true } label: {
                 Image(systemName: "camera.fill").font(.system(size: 22)).foregroundStyle(p.inkSoft)
             }
             .accessibilityLabel("Look with the camera")
