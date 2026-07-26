@@ -224,21 +224,16 @@ struct HomePanel: View {
     private var answerBlock: some View {
         VStack(alignment: .leading, spacing: T.sm) {
             if thinking {
-                Text("thinking…")
-                    .font(.system(size: T.body)).foregroundStyle(p.inkFaint)
+                SlyWaiting("thinking")
             } else if let failure {
                 Text(failure)
                     .font(.system(size: T.body)).foregroundStyle(p.danger)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 ScrollView {
-                    Text(answer)
-                        .font(.system(size: T.body))
-                        .foregroundStyle(p.ink)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
+                    AnswerView(text: answer)
                 }
-                .frame(maxHeight: 320)
+                .frame(maxHeight: 340)
                 .scrollIndicators(.hidden)
             }
         }

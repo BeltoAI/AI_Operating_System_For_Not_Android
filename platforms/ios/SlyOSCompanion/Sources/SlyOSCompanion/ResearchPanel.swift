@@ -20,7 +20,7 @@ struct ResearchPanel: View {
             askRow
 
             if working {
-                centred("Digging…")
+                VStack { Spacer(); SlyWaiting("digging", orbit: 34); Spacer() }.frame(maxWidth: .infinity)
             } else if let failure {
                 message(failure, colour: p.danger)
             } else if !finding.isEmpty {
@@ -78,13 +78,8 @@ struct ResearchPanel: View {
                 .font(.system(size: T.small, weight: .bold)).tracking(2)
                 .foregroundStyle(p.inkFaint)
                 .padding(.top, T.lg)
-            ScrollView {
-                Text(finding)
-                    .font(.system(size: T.body)).foregroundStyle(p.ink)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-            }
-            .scrollIndicators(.hidden)
+            ScrollView { AnswerView(text: finding) }
+                .scrollIndicators(.hidden)
         }
     }
 

@@ -1,6 +1,7 @@
 import SwiftUI
 import EventKit
 import Observation
+import UIKit
 
 /// What needs you — the iOS answer to Android's notification queue.
 ///
@@ -84,8 +85,44 @@ final class NowFeed {
         }
 
         // Soonest first; anything without a time sinks to the bottom rather than jumping the queue.
-        items = found.sorted { ($0.when ?? .distantFuture) < ($1.when ?? .distantFuture) }
+        items = found
+            .filter { !dismissed.contains($0.id) }
+            .sorted { ($0.when ?? .distantFuture) < ($1.when ?? .distantFuture) }
         loading = false
+    }
+
+    // MARK: - Actions
+
+    /// Dismissals are remembered, not just hidden.
+    ///
+    /// The underlying event or reminder still exists — SlyOS has no business deleting someone's
+    /// calendar because they swiped a card away. What it records is that they have dealt with it, so
+    /// it stops coming back on every reload.
+    @ObservationIgnored
+    private var dismissed: Set<String> {
+        get { Set(SharedContainer.defaults.stringArray(forKey: "now.dismissed") ?? []) }
+        set { SharedContainer.defaults.set(Array(newValue), forKey: "now.dismissed") }
+    }
+
+    @MainActor
+    func dismiss(_ item: Item) {
+        dismissed.insert(item.id)
+        withAnimation(.easeOut(duration: 0.2)) { items.removeAll { $0.id == item.id } }
+    }
+
+    @MainActor
+    func clearAll() {
+        dismissed.formUnion(items.map(\.id))
+        withAnimation(.easeOut(duration: 0.2)) { items.removeAll() }
+    }
+
+    /// Open the thing itself, in the app that owns it.
+    @MainActor
+    func open(_ item: Item) {
+        let url = item.kind == .event
+            ? URL(string: "calshow://")           // Calendar at today
+            : URL(string: "x-apple-reminderkit://")
+        if let url, UIApplication.shared.canOpenURL(url) { UIApplication.shared.open(url) }
     }
 }
 
@@ -98,7 +135,7 @@ struct NowPanel: View {
             header
 
             if feed.loading {
-                centred("Looking…")
+                waiting("reading your day")
             } else if let blocked = feed.blocked {
                 blockedState(blocked)
             } else if feed.items.isEmpty {
@@ -124,43 +161,66 @@ struct NowPanel: View {
 
     private var list: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("\(feed.items.count) WAITING")
-                .font(.system(size: T.small, weight: .bold)).tracking(2)
-                .foregroundStyle(p.inkFaint)
-                .padding(.top, T.lg).padding(.bottom, T.sm)
+            SectionHeader(title: "WAITING · \(feed.items.count)") {
+                Button("Clear all") { feed.clearAll() }
+                    .font(.system(size: T.caption))
+                    .foregroundStyle(p.danger)
+            }
+            .padding(.top, T.lg).padding(.bottom, 10)
 
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
+                LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(feed.items) { item in
-                        HStack(alignment: .top, spacing: T.md) {
-                            Image(systemName: item.kind == .event ? "calendar" : "checkmark.circle")
-                                .font(.system(size: 17))
-                                .foregroundStyle(p.accent)
-                                .frame(width: 22)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.title)
-                                    .font(.system(size: T.body)).foregroundStyle(p.ink)
-                                Text(item.detail)
-                                    .font(.system(size: T.caption))
-                                    .foregroundStyle(item.detail == "overdue" ? p.danger : p.inkFaint)
-                            }
-                            Spacer()
+                        SlyCard(onOpen: { feed.open(item) },
+                                onClose: { feed.dismiss(item) }) {
+                            itemBody(item)
                         }
-                        .padding(.vertical, T.sm)
-                        Hairline().opacity(0.6)
                     }
                 }
+                .padding(.bottom, T.md)
             }
             .scrollIndicators(.hidden)
         }
     }
 
+    /// One card. Avatar, who, where it came from, then the detail — the same anatomy as Android's
+    /// notification card, which is what makes the two feeds read as the same screen.
+    private func itemBody(_ item: NowFeed.Item) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                SlyAvatar(name: item.title,
+                          tint: item.kind == .event ? .hex(0x4285F4) : p.accent,
+                          badge: item.kind == .event ? "calendar" : "checkmark")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.title)
+                        .font(.system(size: T.body)).foregroundStyle(p.ink)
+                        .lineLimit(1)
+                    Text(item.kind == .event ? "in your calendar" : "a reminder")
+                        .font(.system(size: T.caption))
+                        .foregroundStyle(item.kind == .event ? .hex(0x4285F4) : p.accent)
+                    Text(item.detail)
+                        .font(.system(size: T.small))
+                        .foregroundStyle(item.detail == "overdue" ? p.danger : p.inkSoft)
+                        .lineLimit(6)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+
+            HStack {
+                Spacer()
+                Text("Open ↗")
+                    .font(.system(size: T.small)).foregroundStyle(p.inkSoft)
+                    .padding(4)
+                    .onTapGesture { feed.open(item) }
+            }
+            .padding(.horizontal, 14).padding(.bottom, 12)
+        }
+    }
+
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: T.sm) {
-            Text("WAITING · 0")
-                .font(.system(size: T.small, weight: .bold)).tracking(2)
-                .foregroundStyle(p.inkFaint)
-                .padding(.top, T.lg)
+            SectionHeader("WAITING · 0").padding(.top, T.lg)
             Text("All caught up.")
                 .font(.system(size: 28)).foregroundStyle(p.ink)
             Text("Nothing on your calendar or reminders for the next two days.")
@@ -186,8 +246,8 @@ struct NowPanel: View {
         }
     }
 
-    private func centred(_ s: String) -> some View {
-        VStack { Spacer(); Text(s).font(.system(size: T.body)).foregroundStyle(p.inkFaint); Spacer() }
+    private func waiting(_ s: String) -> some View {
+        VStack { Spacer(); SlyWaiting(s, orbit: 34); Spacer() }
             .frame(maxWidth: .infinity)
     }
 }

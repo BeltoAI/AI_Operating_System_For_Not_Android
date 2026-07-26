@@ -70,9 +70,21 @@ final class SlySettings {
         self._hasOnboarded = defaults.bool(forKey: Key.onboarded)
     }
 
-    /// How the greeting addresses the owner. Falls back to something neutral rather than a
-    /// placeholder that reads like a bug.
+    /// How the greeting addresses the owner — **first name only**.
+    ///
+    /// People are greeted by the name their friends use, not by what is on their passport: "what
+    /// should happen, Emil?" reads like a person talking, "what should happen, Emil Shirokikh-
+    /// Barragan?" reads like a bank letter. Derived rather than stored, so it works for any user
+    /// without asking them to enter their name twice.
+    ///
+    /// Takes the first whitespace-separated word and leaves it otherwise untouched — hyphenated and
+    /// multi-part given names stay intact, because splitting on a hyphen would turn "Jean-Luc" into
+    /// "Jean" and "Ana-Sofía" into "Ana".
     var greetingName: String {
-        name.trimmingCharacters(in: .whitespaces).isEmpty ? "you" : name
+        let first = name
+            .split(whereSeparator: \.isWhitespace)
+            .first
+            .map(String.init) ?? ""
+        return first.isEmpty ? "you" : first
     }
 }

@@ -26,7 +26,7 @@ struct BrainPanel: View {
             legend
 
             if building {
-                centred("Mapping…")
+                VStack { Spacer(); SlyWaiting("mapping your brain", orbit: 34); Spacer() }.frame(maxWidth: .infinity)
             } else if total == 0 {
                 emptyBrain
             } else {
@@ -150,18 +150,13 @@ struct BrainPanel: View {
     private var answerBlock: some View {
         VStack(alignment: .leading, spacing: T.xs) {
             if asking {
-                Text("thinking…").font(.system(size: T.body)).foregroundStyle(p.inkFaint)
+                SlyWaiting("searching your brain")
             } else if let failure {
                 Text(failure).font(.system(size: T.body)).foregroundStyle(p.danger)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                ScrollView {
-                    Text(answer)
-                        .font(.system(size: T.body)).foregroundStyle(p.ink)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }
-                .frame(maxHeight: 200)
+                ScrollView { AnswerView(text: answer) }
+                .frame(maxHeight: 220)
                 .scrollIndicators(.hidden)
             }
         }
