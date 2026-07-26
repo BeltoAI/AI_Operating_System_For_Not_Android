@@ -321,6 +321,18 @@ struct HomePanel: View {
 
         Task {
             do {
+                // "write me a proposal" should produce a document, not a description of one.
+                if let kind = MakeSomething.Kind.detect(in: asked), GoogleAuth.shared.isConnected {
+                    let made = try await MakeSomething.make(kind, from: asked)
+                    answer = "Made your \(kind.noun): \(made.title)\n\n\(made.url)"
+                    thinking = false
+                    appState.remember(title: made.title, body: "\(kind.noun) — \(made.url)",
+                                      source: "Google")
+                    Outbox.shared.record(what: "Created a \(kind.noun)",
+                                         detail: made.title, outcome: "sent")
+                    return
+                }
+
                 // Off the main actor: the network call is the whole reason the Android Memory tab
                 // used to fail with "-1 couldn't search".
                 let reply = try await AgentClient.ask(asked)
