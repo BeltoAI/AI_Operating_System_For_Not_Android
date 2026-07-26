@@ -19,6 +19,7 @@ targets:
       - path: Assets.xcassets
     dependencies:
       - target: ShareExtension
+      - target: Keyboard
     # An explicit Info.plist rather than GENERATE_INFOPLIST_FILE.
     #
     # The INFOPLIST_KEY_* build settings only emit Apple's *known* keys — custom ones like
@@ -69,6 +70,52 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_ENTITLEMENTS: SlyOS.entitlements
 
+  # The keyboard: reply drafting inside whatever app you're typing in. As close as iOS permits to
+  # what Android does from a notification — it can read its own text field and insert text, but no
+  # entitlement lets any app press send in another app.
+  Keyboard:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Keyboard
+      - path: Sources/SlyOSCompanion/SlyTheme.swift
+      - path: Sources/SlyOSCompanion/SlyCard.swift
+      - path: Sources/SlyOSCompanion/SlyOrbit.swift
+      - path: Sources/SlyOSCompanion/SlyStore.swift
+      - path: Sources/SlyOSCompanion/SharedContainer.swift
+      - path: Sources/SlyOSCompanion/Keychain.swift
+      - path: Sources/SlyOSCompanion/ModelRouter.swift
+      - path: Sources/SlyOSCompanion/AgentClient.swift
+      - path: Sources/SlyOSCompanion/SlySettings.swift
+      - path: Sources/SlyOSCompanion/SlyProfile.swift
+      - path: Sources/SlyOSCompanion/OpenClawPolicy.swift
+      - path: Sources/SlyOSCompanion/DraftLog.swift
+    configFiles:
+      Debug: Secrets.xcconfig
+      Release: Secrets.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.belto.slyos.ios.keyboard
+        PRODUCT_NAME: SlyOSKeyboard
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: SlyOS
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: Keyboard/Keyboard.entitlements
+    info:
+      path: Keyboard/Info.plist
+      properties:
+        CFBundleDisplayName: SlyOS
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
+          NSExtensionAttributes:
+            PrimaryLanguage: en-US
+            PrefersRightToLeft: false
+            IsASCIICapable: false
+            # Full Access: the network, to reach the model, and the App Group, to read the brain.
+            # Without it the keyboard can type but knows nothing, and it says so on screen.
+            RequestsOpenAccess: true
+
   # Reply drafting. iOS forbids reading other apps' notifications, so the honest equivalent is
   # selecting a message anywhere and sharing it here. Runs in its own process, which is why the
   # brain lives in an App Group container both targets can reach.
@@ -91,6 +138,7 @@ targets:
       - path: Sources/SlyOSCompanion/OpenClawPolicy.swift
       - path: Sources/SlyOSCompanion/SlySettings.swift
       - path: Sources/SlyOSCompanion/SlyProfile.swift
+      - path: Sources/SlyOSCompanion/DraftLog.swift
     configFiles:
       Debug: Secrets.xcconfig
       Release: Secrets.xcconfig

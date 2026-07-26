@@ -108,6 +108,8 @@ struct SettingsPanel: View {
 
                     group("GOOGLE", p: p) { GoogleSection(palette: p) }
 
+                    group("AUTOMATION", p: p) { AutonomySection(palette: p) }
+
                     group("OPENCLAW", p: p) { OpenClawSection(palette: p) }
 
                     group("IMPORT", p: p) {
@@ -570,6 +572,88 @@ private struct OpenClawSection: View {
             .autocorrectionDisabled()
             .textInputAutocapitalization(.never)
             Rectangle().fill(palette.hairline).frame(height: 1)
+        }
+    }
+}
+
+
+/// How much SlyOS may do on its own — and an honest statement of what each level can reach.
+private struct AutonomySection: View {
+    let palette: Palette
+
+    @State private var autonomy = Autonomy.shared
+    @State private var level: Autonomy.Level = .draft
+    @State private var knownOnly = true
+    @State private var limit = 10
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: T.sm) {
+            ForEach(Autonomy.Level.allCases) { l in
+                Button { level = l; autonomy.level = l } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: level == l ? "largecircle.fill.circle" : "circle")
+                            .font(.system(size: 18))
+                            .foregroundStyle(level == l ? palette.accent : palette.inkFaint)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(l.title)
+                                    .font(.system(size: T.body)).foregroundStyle(palette.ink)
+                                if l.needsGateway && !OpenClaw.shared.isConfigured {
+                                    Text("needs gateway")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(palette.danger)
+                                        .padding(.horizontal, 6).padding(.vertical, 2)
+                                        .background(Capsule().fill(palette.danger.opacity(0.15)))
+                                }
+                            }
+                            Text(l.detail)
+                                .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+
+            if level == .autonomous {
+                Divider().overlay(palette.hairline).padding(.vertical, 4)
+
+                Toggle(isOn: $knownOnly) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Only people you've spoken with")
+                            .font(.system(size: T.body)).foregroundStyle(palette.ink)
+                        Text("A confident reply to a stranger is the expensive mistake, not a "
+                             + "clumsy one to a friend.")
+                            .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .tint(palette.accent)
+                .onChange(of: knownOnly) { _, v in autonomy.onlyKnownContacts = v }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text("At most \(limit) a day")
+                            .font(.system(size: T.body)).foregroundStyle(palette.ink)
+                        Spacer()
+                        Text("\(autonomy.sentToday) sent today")
+                            .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                    }
+                    Slider(value: Binding(get: { Double(limit) },
+                                          set: { limit = Int($0); autonomy.dailyLimit = Int($0) }),
+                           in: 1...50, step: 1)
+                        .tint(palette.accent)
+                    Text("An agent stuck in a loop costs you your reputation, not your money.")
+                        .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .onAppear {
+            level = autonomy.level
+            knownOnly = autonomy.onlyKnownContacts
+            limit = autonomy.dailyLimit
         }
     }
 }

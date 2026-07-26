@@ -113,6 +113,11 @@ enum AgentClient {
         return s
     }
 
+    /// Real examples of how the owner writes, when there are any.
+    ///
+    /// A description of someone's tone is a guess; six things they actually sent are evidence.
+    static func voiceBlock() -> String { DraftLog.shared.styleExamples() }
+
     /// Who the owner is, appended to the system prompt.
     ///
     /// Capped inside `fullProfile` rather than here — an unbounded profile is what once ate the
