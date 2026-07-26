@@ -106,6 +106,8 @@ struct SettingsPanel: View {
                         }
                     }
 
+                    group("GOOGLE", p: p) { GoogleSection(palette: p) }
+
                     group("IMPORT", p: p) {
                         VStack(alignment: .leading, spacing: 0) {
                             Text("Everything imported stays on this phone.")
@@ -358,5 +360,118 @@ private struct AccountSection: View {
             }
             busy = false
         }
+    }
+}
+
+
+/// Google: sign-in, and the full-brain backup into the owner's own Drive.
+private struct GoogleSection: View {
+    let palette: Palette
+
+    @State private var auth = GoogleAuth.shared
+    @State private var backup = DriveBackup.shared
+    @State private var busy = false
+    @State private var note: String?
+    @State private var isError = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: T.sm) {
+            if !auth.isConfigured {
+                Text("Google isn't set up in this build. Add an iOS OAuth client id to "
+                     + "Secrets.xcconfig — the Android one won't work, because Google ties the "
+                     + "redirect scheme to the client type.")
+                    .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if auth.isConnected {
+                connected
+            } else {
+                Text("Connect Google for calendar invites with real Meet links, and to back your "
+                     + "brain up to your own Drive.")
+                    .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+                pill("Connect Google") { connect() }
+            }
+
+            if let note {
+                Text(note)
+                    .font(.system(size: T.caption))
+                    .foregroundStyle(isError ? palette.danger : palette.good)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var connected: some View {
+        VStack(alignment: .leading, spacing: T.sm) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(auth.connectedEmail ?? "Connected")
+                        .font(.system(size: T.body)).foregroundStyle(palette.ink)
+                    Text(backupLine)
+                        .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                }
+                Spacer()
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 16)).foregroundStyle(palette.good)
+            }
+
+            Text("Backups use the drive.file scope, so SlyOS can only ever see the one file it "
+                 + "created — never the rest of your Drive.")
+                .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: T.sm) {
+                pill(backup.working ? "Working…" : "Back up brain") {
+                    Task { await backup.backUp(); report() }
+                }
+                Button("Restore") {
+                    Task {
+                        let n = await backup.restore()
+                        report(success: "Restored \(n) \(n == 1 ? "memory" : "memories").")
+                    }
+                }
+                .font(.system(size: T.small)).foregroundStyle(palette.ink)
+                .padding(.horizontal, T.md).padding(.vertical, 9)
+                .background(Capsule().fill(palette.accent.opacity(0.22)))
+
+                Button("Disconnect") { auth.signOut() }
+                    .font(.system(size: T.small)).foregroundStyle(palette.inkFaint)
+                Spacer()
+            }
+            .disabled(backup.working)
+        }
+    }
+
+    private var backupLine: String {
+        if let last = backup.lastBackup {
+            let size = backup.backupSize.map { " · \($0 / 1024) KB" } ?? ""
+            return "Backed up \(last.formatted(.relative(presentation: .named)))\(size)"
+        }
+        return "Not backed up yet"
+    }
+
+    private func pill(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: T.small, weight: .medium))
+                .foregroundStyle(palette.ink)
+                .padding(.horizontal, T.md).padding(.vertical, 9)
+                .background(Capsule().fill(palette.accent))
+        }
+        .disabled(busy)
+    }
+
+    private func connect() {
+        busy = true; note = nil
+        Task {
+            do { try await auth.signIn(); isError = false; note = "Google connected." }
+            catch { isError = true; note = error.localizedDescription }
+            busy = false
+        }
+    }
+
+    private func report(success: String? = nil) {
+        if let e = backup.lastError { isError = true; note = e }
+        else { isError = false; note = success ?? "Backed up to your Drive." }
     }
 }

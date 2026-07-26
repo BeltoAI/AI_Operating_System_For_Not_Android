@@ -16,9 +16,12 @@ final class SupabaseClient {
 
     /// Both are read from Info.plist and both are safe to ship — the anon key is designed to be
     /// public, because Row-Level Security is what actually protects the data.
+    /// Built from the bare host, because an xcconfig treats "//" as the start of a comment and a
+    /// full https:// URL cannot survive being stored in one.
     var baseURL: String {
-        (Bundle.main.object(forInfoDictionaryKey: "SupabaseURL") as? String ?? "")
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let host = (Bundle.main.object(forInfoDictionaryKey: "SupabaseHost") as? String ?? "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
+        return host.isEmpty ? "" : "https://\(host)"
     }
     var anonKey: String {
         Bundle.main.object(forInfoDictionaryKey: "SupabaseAnonKey") as? String ?? ""
@@ -54,7 +57,7 @@ final class SupabaseClient {
         var errorDescription: String? {
             switch self {
             case .notConfigured:
-                "Accounts aren't set up in this build (no Supabase URL or key)."
+                "Accounts aren't set up in this build (no Supabase host or key)."
             case .api(_, let message):
                 message
             case .malformed:

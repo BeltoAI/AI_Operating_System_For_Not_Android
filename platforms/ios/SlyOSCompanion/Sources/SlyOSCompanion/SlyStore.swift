@@ -18,8 +18,9 @@ final class SlyStore {
 
     static let shared = SlyStore()
 
-    private var db: OpaquePointer?
-    private let queue = DispatchQueue(label: "com.belto.slyos.store")
+    // Not private: the backup extension in this file's module reads both.
+    fileprivate(set) var db: OpaquePointer?
+    fileprivate let queue = DispatchQueue(label: "com.belto.slyos.store")
 
     /// SQLite needs to know whether it may keep a borrowed pointer. Swift's `String` buffers are
     /// not guaranteed to outlive the call, so every text binding must be TRANSIENT (copy now).
@@ -266,4 +267,55 @@ struct Memory: Identifiable, Equatable {
     var body: String
     var source: String = ""     // Gmail | Calendar | Contacts | typed …
     var date: Date = .now
+}
+
+// MARK: - Backup support
+
+extension SlyStore {
+
+    /// Fold the write-ahead log back into the main database file.
+    ///
+    /// In WAL mode recent commits live in a `-wal` sidecar, so copying the `.sqlite` on its own
+    /// backs up a database missing everything written since the last automatic checkpoint — which
+    /// is precisely the newest memories. Anything that copies the file must call this first.
+    func checkpoint() {
+        queue.sync {
+            sqlite3_exec(db, "PRAGMA wal_checkpoint(TRUNCATE);", nil, nil, nil)
+        }
+    }
+
+    /// Merge another SlyOS database into this one, returning how many rows were added.
+    ///
+    /// Rows already present are skipped on `(kind, body, ts)` rather than replaced, so restoring a
+    /// backup onto a phone that has kept using itself adds what was missing instead of flattening
+    /// it back to the snapshot.
+    @discardableResult
+    func merge(from url: URL) -> Int {
+        queue.sync {
+            guard sqlite3_exec(db, "ATTACH DATABASE '\(url.path)' AS backup;", nil, nil, nil) == SQLITE_OK
+            else { return 0 }
+            defer { sqlite3_exec(db, "DETACH DATABASE backup;", nil, nil, nil) }
+
+            let before = countUnsafe()
+            sqlite3_exec(db, """
+                INSERT INTO memories (kind, person, title, body, source, ts)
+                SELECT b.kind, b.person, b.title, b.body, b.source, b.ts
+                FROM backup.memories b
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM main.memories m
+                  WHERE m.kind = b.kind AND m.body = b.body AND m.ts = b.ts
+                );
+                """, nil, nil, nil)
+            return countUnsafe() - before
+        }
+    }
+
+    /// Row count without re-entering the serial queue — callers here already hold it.
+    private func countUnsafe() -> Int {
+        var st: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM memories;", -1, &st, nil) == SQLITE_OK
+        else { return 0 }
+        defer { sqlite3_finalize(st) }
+        return sqlite3_step(st) == SQLITE_ROW ? Int(sqlite3_column_int64(st, 0)) : 0
+    }
 }
