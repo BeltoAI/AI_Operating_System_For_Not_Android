@@ -319,3 +319,18 @@ extension SlyStore {
         return sqlite3_step(st) == SQLITE_ROW ? Int(sqlite3_column_int64(st, 0)) : 0
     }
 }
+
+extension SlyStore {
+    /// Remove one memory. Used where the owner explicitly discards something — a paper they don't
+    /// want kept — never as a side effect of anything else.
+    func delete(id: Int64) {
+        queue.sync {
+            var st: OpaquePointer?
+            guard sqlite3_prepare_v2(db, "DELETE FROM memories WHERE id = ?;", -1, &st, nil) == SQLITE_OK
+            else { return }
+            defer { sqlite3_finalize(st) }
+            sqlite3_bind_int64(st, 1, id)
+            sqlite3_step(st)
+        }
+    }
+}

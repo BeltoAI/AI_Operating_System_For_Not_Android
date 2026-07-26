@@ -91,6 +91,35 @@ final class NowFeed {
         loading = false
     }
 
+    // MARK: - Digest
+
+    private(set) var digest = ""
+    private(set) var digesting = false
+
+    /// Summarise what is on, in the owner's own terms.
+    ///
+    /// Written from the same brain as everything else, so it can say "Ronan's LP call" rather than
+    /// "Event at 17:00".
+    @MainActor
+    func catchUp() async {
+        guard !digesting else { return }
+        digesting = true
+        defer { digesting = false }
+
+        guard !items.isEmpty else { digest = "You're all caught up."; return }
+        let lines = items.prefix(20).map { "\($0.title) — \($0.detail)" }.joined(separator: "\n")
+        do {
+            digest = try await AgentClient.complete(
+                system: "You are SlyOS summarising the owner's next two days in three sentences or "
+                      + "fewer. Plain, specific, no preamble and no bullet list. Say what actually "
+                      + "needs them, and name people.",
+                user: "WHAT'S ON:\n\(lines)",
+                tier: .cheap)
+        } catch {
+            digest = ""
+        }
+    }
+
     // MARK: - Actions
 
     /// Dismissals are remembered, not just hidden.
@@ -138,10 +167,15 @@ struct NowPanel: View {
                 waiting("reading your day")
             } else if let blocked = feed.blocked {
                 blockedState(blocked)
-            } else if feed.items.isEmpty {
-                emptyState
             } else {
-                list
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        digestCard.padding(.top, T.lg)
+                        if feed.items.isEmpty { emptyState } else { list }
+                    }
+                    .padding(.bottom, T.md)
+                }
+                .scrollIndicators(.hidden)
             }
 
             Spacer(minLength: 0)
@@ -153,10 +187,45 @@ struct NowPanel: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: T.xs) {
             Heading("Now")
-            Text(Date.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                .font(.system(size: T.body)).foregroundStyle(p.inkFaint)
+            HStack {
+                Text(Date.now.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
+                    .font(.system(size: T.body)).foregroundStyle(p.inkFaint)
+                Spacer()
+                Button("Refresh") { Task { await feed.load() } }
+                    .font(.system(size: T.body)).foregroundStyle(p.inkSoft)
+            }
         }
         .padding(.top, T.md)
+    }
+
+    /// "WHAT YOU MISSED" — a written summary of the day so far, on demand.
+    ///
+    /// 18pt corners and 18pt padding, wider than the list cards, exactly as Compose sets it: this is
+    /// a panel you read, not an item you act on.
+    private var digestCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "WHAT YOU MISSED") {
+                if feed.digesting { SlyOrbit(size: 12) }
+                else {
+                    Text("↻").font(.system(size: T.small)).foregroundStyle(p.accent)
+                        .padding(4)
+                        .onTapGesture { Task { await feed.catchUp() } }
+                }
+            }
+            if feed.digesting && feed.digest.isEmpty {
+                SlyWaiting("reading your day")
+            } else if feed.digest.isEmpty {
+                Text(feed.items.isEmpty ? "You're all caught up." : "Tap ↻ for a summary.")
+                    .font(.system(size: T.small)).foregroundStyle(p.inkSoft)
+            } else {
+                Text(feed.digest)
+                    .font(.system(size: T.small)).foregroundStyle(p.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(RoundedRectangle(cornerRadius: 18).fill(p.bgElevated))
     }
 
     private var list: some View {
@@ -168,18 +237,14 @@ struct NowPanel: View {
             }
             .padding(.top, T.lg).padding(.bottom, 10)
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(feed.items) { item in
-                        SlyCard(onOpen: { feed.open(item) },
-                                onClose: { feed.dismiss(item) }) {
-                            itemBody(item)
-                        }
+            LazyVStack(alignment: .leading, spacing: 10) {
+                ForEach(feed.items) { item in
+                    SlyCard(onOpen: { feed.open(item) },
+                            onClose: { feed.dismiss(item) }) {
+                        itemBody(item)
                     }
                 }
-                .padding(.bottom, T.md)
             }
-            .scrollIndicators(.hidden)
         }
     }
 
