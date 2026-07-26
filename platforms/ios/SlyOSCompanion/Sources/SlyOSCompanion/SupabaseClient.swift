@@ -199,22 +199,44 @@ final class SupabaseClient {
         let since = Int((lastSync?.timeIntervalSince1970 ?? 0) * 1000)
         let path = "/rest/v1/brain_items?user_id=eq.\(user)&updated_at=gt.\(since)"
             + "&deleted=is.false&order=updated_at.asc&limit=2000"
+        // Note the watermark is `updated_at`, not the message date — rows arrive in the order they
+        // were written, which is what makes resuming from `lastSync` correct.
 
         let rows = try await sendArray("GET", path, token: token)
         guard !rows.isEmpty else { return }
 
         // Anything this device pushed comes straight back; skipping it avoids duplicating our own
         // rows on every round trip.
+        //
+        // Android writes a different shape from iOS — it puts the correspondent in `title` and the
+        // platform in `data.platform`, where iOS uses `data.person` and `data.source`. Both are read
+        // here rather than forcing one to change, because the contract is the table, not the client.
         let incoming: [Memory] = rows.compactMap { row in
             guard let clientID = row["client_id"] as? String, !clientID.hasPrefix("ios:") else { return nil }
             let data = row["data"] as? [String: Any] ?? [:]
-            let millis = (row["updated_at"] as? Double) ?? 0
+            let kind = row["kind"] as? String ?? "note"
+            let title = row["title"] as? String ?? ""
+
+            let person = (data["person"] as? String)
+                ?? (kind == "message" ? title : "")
+            let source = (data["source"] as? String)
+                ?? (data["platform"] as? String)
+                ?? "synced"
+
+            // Android sends the message's own timestamp in `data.ts`; `updated_at` is when the row
+            // was written, which for a five-year-old message is today and would sort it to the top.
+            let millis = (data["ts"] as? Double)
+                ?? (row["updated_at"] as? Double)
+                ?? 0
+
             return Memory(
-                kind: row["kind"] as? String ?? "note",
-                person: data["person"] as? String ?? "",
-                title: row["title"] as? String ?? "",
+                kind: kind,
+                person: person,
+                // A message's title on Android is the contact, which is already the person — leaving
+                // it in both places makes every search result read "Carlos Carlos".
+                title: kind == "message" ? "" : title,
                 body: row["body"] as? String ?? "",
-                source: data["source"] as? String ?? "synced",
+                source: source,
                 date: Date(timeIntervalSince1970: millis / 1000))
         }
         if !incoming.isEmpty { SlyStore.shared.insertMany(incoming) }
