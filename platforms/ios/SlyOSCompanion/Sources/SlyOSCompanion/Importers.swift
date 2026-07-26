@@ -14,13 +14,14 @@ final class Importers {
     static let shared = Importers()
 
     enum Source: String, CaseIterable, Identifiable {
-        case contacts, calendar
+        case contacts, calendar, mail
         var id: String { rawValue }
 
         var title: String {
             switch self {
             case .contacts: "Contacts"
             case .calendar: "Calendar"
+            case .mail: "Mail"
             }
         }
 
@@ -28,6 +29,7 @@ final class Importers {
             switch self {
             case .contacts: "Names, numbers and how you reach people"
             case .calendar: "Who you met, when, and about what"
+            case .mail: "Everything you've written and received"
             }
         }
 
@@ -35,8 +37,13 @@ final class Importers {
             switch self {
             case .contacts: "person.crop.circle.fill"
             case .calendar: "calendar"
+            case .mail: "envelope.fill"
             }
         }
+
+        /// Mail is the one source that needs an account rather than a device permission — iOS gives
+        /// apps no access to the Mail app at all, so Gmail's API is the only route there is.
+        var needsGoogle: Bool { self == .mail }
     }
 
     /// What happened last time each source ran, so the UI never has to guess.
@@ -163,6 +170,24 @@ final class Importers {
 
         SlyStore.shared.insertMany(batch)
         return await finish(.calendar, count: batch.count)
+    }
+
+    // MARK: - Mail
+
+    /// Import recent Gmail. Requires Google to be connected — there is no device-level alternative.
+    @discardableResult
+    func importMail(max: Int = 400) async -> Int {
+        await MainActor.run { status[.mail, default: Status()].running = true }
+
+        guard GoogleAuth.shared.isConnected else {
+            return await finish(.mail, error: "Connect Google first — iOS gives apps no access to the Mail app.")
+        }
+        do {
+            let count = try await GmailImport.run(maxMessages: max)
+            return await finish(.mail, count: count)
+        } catch {
+            return await finish(.mail, error: error.localizedDescription)
+        }
     }
 
     // MARK: - Bookkeeping

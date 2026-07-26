@@ -157,7 +157,7 @@ private struct MemoryStep: View {
                 ImportRow(source: source, palette: palette)
             }
 
-            Text("Mail, documents and Google Calendar connect later in Settings.")
+            Text("Mail needs Google connected — you can do that in Settings any time.")
                 .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
                 .padding(.top, T.sm)
         }
@@ -254,6 +254,7 @@ struct ImportRow: View {
                     switch source {
                     case .contacts: await importers.importContacts()
                     case .calendar: await importers.importCalendar()
+                    case .mail: await importers.importMail()
                     }
                 }
             } label: {
