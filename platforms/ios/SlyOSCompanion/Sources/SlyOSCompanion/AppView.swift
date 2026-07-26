@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UIKit
 
 /// The SlyOS shell: a full-bleed panel with the persistent bottom bar underneath.
 ///
@@ -60,6 +61,9 @@ struct HomePanel: View {
     @State private var answer = ""
     @State private var thinking = false
     @State private var failure: String?
+    @State private var copied = false
+    @State private var reading = false
+    @State private var lastQuery = ""
     @State private var voice = VoiceInput.shared
     @State private var showScanner = false
     @State private var showPhotoPicker = false
@@ -87,6 +91,7 @@ struct HomePanel: View {
             }
             .ignoresSafeArea()
         }
+        .fullScreenCover(isPresented: $reading) { ReaderView(text: answer) }
         .photosPicker(isPresented: $showPhotoPicker, selection: $pickedPhoto, matching: .images)
         .onChange(of: pickedPhoto) { _, item in
             guard let item else { return }
@@ -219,26 +224,72 @@ struct HomePanel: View {
         }
     }
 
-    /// The reply, in place of the talk affordance. Scrolls rather than pushing the prompt off the
-    /// screen, because a long answer must not move the thing you type into.
+    /// The reply — a card, not loose text.
+    ///
+    /// This is what makes an answer look considered: `bgElevated` at 16pt with 16pt padding,
+    /// swipeable like every other card (left dismisses it, right opens whatever it links to), a
+    /// scroll cap so a long reply cannot push the prompt off screen, and a full-screen reader for
+    /// anything too long to sit comfortably in it.
     private var answerBlock: some View {
-        VStack(alignment: .leading, spacing: T.sm) {
-            if thinking {
-                SlyWaiting("thinking")
-            } else if let failure {
-                Text(failure)
-                    .font(.system(size: T.body)).foregroundStyle(p.danger)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                ScrollView {
-                    AnswerView(text: answer)
+        SlyCard(onOpen: openLink, onClose: { withAnimation { clearAnswer() } }) {
+            VStack(alignment: .leading, spacing: 0) {
+                if thinking {
+                    HStack(spacing: 14) {
+                        SlyOrbit(size: 30)
+                        Text("thinking…")
+                            .font(.system(size: T.body)).foregroundStyle(p.inkFaint)
+                    }
+                } else if let failure {
+                    Text(failure)
+                        .font(.system(size: T.body)).foregroundStyle(p.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ScrollView { AnswerView(text: answer) }
+                        .frame(maxHeight: 420)
+                        .scrollIndicators(.hidden)
+
+                    HStack(spacing: 10) {
+                        // A long answer gets a proper reader rather than being trapped in the card.
+                        if answer.count > 480 {
+                            Button { reading = true } label: {
+                                Text("Read ⤢")
+                                    .font(.system(size: T.small)).foregroundStyle(p.bgElevated)
+                                    .padding(.horizontal, 14).padding(.vertical, 6)
+                                    .background(Capsule().fill(p.accent))
+                            }
+                        }
+                        Button {
+                            UIPasteboard.general.string = answer
+                            copied = true
+                        } label: {
+                            Text(copied ? "Copied" : "Copy")
+                                .font(.system(size: T.small)).foregroundStyle(p.accent)
+                                .padding(.horizontal, 14).padding(.vertical, 6)
+                                .background(Capsule().fill(p.hairline))
+                        }
+                        Spacer()
+                    }
+                    .padding(.top, 10)
                 }
-                .frame(maxHeight: 340)
-                .scrollIndicators(.hidden)
             }
+            .padding(16)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, T.lg)
+    }
+
+    private func clearAnswer() {
+        answer = ""; failure = nil; copied = false
+    }
+
+    /// Swiping the answer right opens what it points at — the first link in it, or a search for
+    /// what was asked.
+    private func openLink() {
+        let link = answer.firstMatch(#"https?://[^\s)\]]+"#)?[0]
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".,)"))
+        let url = link.flatMap(URL.init(string:))
+            ?? URL(string: "https://www.google.com/search?q="
+                   + (lastQuery.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""))
+        if let url { UIApplication.shared.open(url) }
     }
 
     private var canSend: Bool {
@@ -248,6 +299,8 @@ struct HomePanel: View {
     private func send() {
         guard canSend else { return }
         let asked = prompt
+        lastQuery = asked
+        copied = false
 
         // Everything you tell SlyOS is kept. That is the whole premise, so it happens here rather
         // than only when a model round-trip succeeds.
@@ -270,5 +323,33 @@ struct HomePanel: View {
                 thinking = false
             }
         }
+    }
+}
+
+
+/// A long answer, full screen and properly scrollable.
+///
+/// Compose has this for the same reason: a summary that can only be read four lines at a time
+/// through a capped card is a summary nobody reads.
+struct ReaderView: View {
+    let text: String
+    @Environment(\.dismiss) private var dismiss
+    @Environment(SlySettings.self) private var settings
+
+    var body: some View {
+        let p = Palette(dark: settings.dark)
+        NavigationStack {
+            ScrollView {
+                AnswerView(text: text, showHero: false).padding(T.md)
+            }
+            .background(p.bg.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }.tint(p.accent)
+                }
+            }
+        }
+        .environment(\.palette, p)
+        .preferredColorScheme(settings.dark ? .dark : .light)
     }
 }
