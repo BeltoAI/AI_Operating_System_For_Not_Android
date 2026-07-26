@@ -18,6 +18,8 @@ struct SettingsPanel: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: T.lg) {
 
+                    group("ACCOUNT", p: p) { AccountSection(palette: p) }
+
                     group("APPEARANCE", p: p) {
                         Toggle(isOn: $settings.dark) {
                             VStack(alignment: .leading, spacing: 2) {
@@ -211,5 +213,150 @@ private struct CharacterEditor: View {
             .background(RoundedRectangle(cornerRadius: 14).fill(palette.bgElevated))
             .onChange(of: text) { _, new in SlyProfile.shared.character = new }
             .onAppear { text = SlyProfile.shared.character }
+    }
+}
+
+
+/// Sign up, sign in, and sync. Matches the cross-client contract in ACCOUNT_AND_SYNC.md, so the
+/// same account carries the same brain between this app and the Android one.
+private struct AccountSection: View {
+    let palette: Palette
+
+    @State private var supabase = SupabaseClient.shared
+    @State private var email = ""
+    @State private var password = ""
+    @State private var busy = false
+    @State private var message: String?
+    @State private var isError = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: T.sm) {
+            if !supabase.isConfigured {
+                Text("Accounts aren't set up in this build. Add SupabaseURL and SupabaseAnonKey to "
+                     + "the project's Info.plist keys.")
+                    .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if supabase.isSignedIn {
+                signedIn
+            } else {
+                signedOut
+            }
+
+            if let message {
+                Text(message)
+                    .font(.system(size: T.caption))
+                    .foregroundStyle(isError ? palette.danger : palette.good)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var signedIn: some View {
+        VStack(alignment: .leading, spacing: T.sm) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(supabase.email ?? "Signed in")
+                        .font(.system(size: T.body)).foregroundStyle(palette.ink)
+                    Text(syncLine)
+                        .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                }
+                Spacer()
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 16)).foregroundStyle(palette.good)
+            }
+
+            HStack(spacing: T.sm) {
+                Button {
+                    Task { await supabase.sync() }
+                } label: {
+                    Text(supabase.syncing ? "Syncing…" : "Back up now")
+                        .font(.system(size: T.small, weight: .medium))
+                        .foregroundStyle(palette.ink)
+                        .padding(.horizontal, T.md).padding(.vertical, 9)
+                        .background(Capsule().fill(palette.accent))
+                }
+                .disabled(supabase.syncing)
+
+                Button("Sign out") { supabase.signOut() }
+                    .font(.system(size: T.small))
+                    .foregroundStyle(palette.inkFaint)
+                Spacer()
+            }
+        }
+    }
+
+    private var syncLine: String {
+        if let error = supabase.lastError { return error }
+        guard let last = supabase.lastSync else { return "Not backed up yet" }
+        return "Backed up \(last.formatted(.relative(presentation: .named)))"
+    }
+
+    private var signedOut: some View {
+        VStack(alignment: .leading, spacing: T.sm) {
+            Text("An account backs your brain up and carries it to your other devices. Same account "
+                 + "as the Android app.")
+                .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            field("Email", text: $email, secure: false)
+            field("Password", text: $password, secure: true)
+
+            HStack(spacing: T.sm) {
+                Button { run(signingUp: false) } label: {
+                    Text("Sign in")
+                        .font(.system(size: T.small, weight: .medium))
+                        .foregroundStyle(palette.ink)
+                        .padding(.horizontal, T.md).padding(.vertical, 9)
+                        .background(Capsule().fill(palette.accent))
+                }
+                Button { run(signingUp: true) } label: {
+                    Text("Create account")
+                        .font(.system(size: T.small))
+                        .foregroundStyle(palette.ink)
+                        .padding(.horizontal, T.md).padding(.vertical, 9)
+                        .background(Capsule().fill(palette.accent.opacity(0.22)))
+                }
+                Spacer()
+            }
+            .disabled(busy || email.isEmpty || password.isEmpty)
+        }
+    }
+
+    private func field(_ label: String, text: Binding<String>, secure: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+            Group {
+                if secure { SecureField("", text: text) } else { TextField("", text: text) }
+            }
+            .font(.system(size: T.body))
+            .foregroundStyle(palette.ink)
+            .textFieldStyle(.plain)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+            .keyboardType(secure ? .default : .emailAddress)
+            Rectangle().fill(palette.hairline).frame(height: 1)
+        }
+    }
+
+    private func run(signingUp: Bool) {
+        busy = true; message = nil
+        Task {
+            do {
+                if signingUp {
+                    try await SupabaseClient.shared.signUp(email: email, password: password)
+                } else {
+                    try await SupabaseClient.shared.signIn(email: email, password: password)
+                }
+                password = ""
+                isError = false
+                message = signingUp ? "Account created." : nil
+                // First sign-in on a device should pull the brain down without being asked.
+                await SupabaseClient.shared.sync()
+            } catch {
+                isError = true
+                message = error.localizedDescription
+            }
+            busy = false
+        }
     }
 }

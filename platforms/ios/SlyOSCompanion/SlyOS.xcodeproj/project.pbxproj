@@ -13,6 +13,7 @@
 		2BC7D9C202283C967DBD633C /* GoogleCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A873207FE09982F31D1267DE /* GoogleCalendar.swift */; };
 		345EB65629376EC203E90B91 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA6D40631C792E1579C73E1 /* Keychain.swift */; };
 		353D222C4DDE1EDD3EB4A0F0 /* Importers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60A1424E9472400660E3D862 /* Importers.swift */; };
+		366A3B19C8EC0120F2F98373 /* SupabaseClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFB660CA811A95EC3EEA0993 /* SupabaseClient.swift */; };
 		42EA4B1552F2E01061EB0A41 /* SharedContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81A437CA15FE1138F42223EB /* SharedContainer.swift */; };
 		4AFAE3B3A68B15E75B6B11B1 /* VoiceInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49072383C2A2EB94CA868482 /* VoiceInput.swift */; };
 		4FA82C224E8DA6767D351838 /* LookMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94337A013ED9A6659DBA1390 /* LookMode.swift */; };
@@ -93,6 +94,7 @@
 		A5EB5629BDF4B7C073699E99 /* ModelRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelRouter.swift; sourceTree = "<group>"; };
 		A873207FE09982F31D1267DE /* GoogleCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleCalendar.swift; sourceTree = "<group>"; };
 		ACA5FE0A273E1BF5B7C64F95 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		AFB660CA811A95EC3EEA0993 /* SupabaseClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseClient.swift; sourceTree = "<group>"; };
 		B147147BCF1ADF129C7C8E9A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B51B0558216DA08F49087280 /* GoogleAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleAuth.swift; sourceTree = "<group>"; };
 		BD0CB831912BB9C31CE22922 /* ShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
@@ -134,6 +136,7 @@
 				CA79A7079293CD334D9916D9 /* SlySettings.swift */,
 				12DEC5C721238BE5B500EC98 /* SlyStore.swift */,
 				63D2B0AA35C7F9C6FA2FB4B5 /* SlyTheme.swift */,
+				AFB660CA811A95EC3EEA0993 /* SupabaseClient.swift */,
 				49072383C2A2EB94CA868482 /* VoiceInput.swift */,
 			);
 			name = SlyOSCompanion;
@@ -289,6 +292,7 @@
 				5E5005B159CD132F5FFF99FD /* SlySettings.swift in Sources */,
 				9F846CF60BF2C5FEBF3A5CC7 /* SlyStore.swift in Sources */,
 				7482762E246CE1EA61998D5C /* SlyTheme.swift in Sources */,
+				366A3B19C8EC0120F2F98373 /* SupabaseClient.swift in Sources */,
 				4AFAE3B3A68B15E75B6B11B1 /* VoiceInput.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -386,27 +390,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = SlyOS;
-				INFOPLIST_KEY_GoogleOAuthClientID = "";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "SlyOS reads your calendar only when you ask about your schedule and writes events only after a confirmed request.";
-				INFOPLIST_KEY_NSCameraUsageDescription = "SlyOS uses the camera when you open Look mode to identify, read, and remember what you point at.";
-				INFOPLIST_KEY_NSContactsUsageDescription = "SlyOS searches your contacts only when a prompt needs a person, phone number, or email address.";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "SlyOS can lock your brain behind Face ID so only you can read it.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SlyOS uses your location when you ask something about where you are, or ask it to share your location.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SlyOS uses the microphone only when you choose voice input or a voice workflow.";
-				INFOPLIST_KEY_NSMotionUsageDescription = "SlyOS uses motion only to tell whether you are travelling when that changes an answer.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "SlyOS saves a document or image to your photos only when you ask it to.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "SlyOS reads photos you explicitly choose for Look, document, receipt, and memory workflows.";
-				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "SlyOS reads and writes reminders only for reminder workflows you explicitly request.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SlyOS transcribes speech only after you tap the voice control.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UIStatusBarHidden = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
-				INFOPLIST_KEY_UIViewControllerBasedStatusBarAppearance = NO;
+				INFOPLIST_FILE = "SlyOS-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -426,27 +410,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = SlyOS;
-				INFOPLIST_KEY_GoogleOAuthClientID = "";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "SlyOS reads your calendar only when you ask about your schedule and writes events only after a confirmed request.";
-				INFOPLIST_KEY_NSCameraUsageDescription = "SlyOS uses the camera when you open Look mode to identify, read, and remember what you point at.";
-				INFOPLIST_KEY_NSContactsUsageDescription = "SlyOS searches your contacts only when a prompt needs a person, phone number, or email address.";
-				INFOPLIST_KEY_NSFaceIDUsageDescription = "SlyOS can lock your brain behind Face ID so only you can read it.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SlyOS uses your location when you ask something about where you are, or ask it to share your location.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SlyOS uses the microphone only when you choose voice input or a voice workflow.";
-				INFOPLIST_KEY_NSMotionUsageDescription = "SlyOS uses motion only to tell whether you are travelling when that changes an answer.";
-				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "SlyOS saves a document or image to your photos only when you ask it to.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "SlyOS reads photos you explicitly choose for Look, document, receipt, and memory workflows.";
-				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "SlyOS reads and writes reminders only for reminder workflows you explicitly request.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SlyOS transcribes speech only after you tap the voice control.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UIStatusBarHidden = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
-				INFOPLIST_KEY_UIViewControllerBasedStatusBarAppearance = NO;
+				INFOPLIST_FILE = "SlyOS-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

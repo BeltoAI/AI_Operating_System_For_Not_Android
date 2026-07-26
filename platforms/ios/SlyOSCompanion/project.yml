@@ -17,50 +17,54 @@ targets:
     sources:
       - path: Sources/SlyOSCompanion
       - path: Assets.xcassets
+    dependencies:
+      - target: ShareExtension
+    # An explicit Info.plist rather than GENERATE_INFOPLIST_FILE.
+    #
+    # The INFOPLIST_KEY_* build settings only emit Apple's *known* keys — custom ones like
+    # GoogleOAuthClientID are dropped silently, so every lookup returned empty and Google sign-in
+    # and accounts were disabled at runtime with no error anywhere. Declaring the file outright is
+    # the only way to ship our own keys.
+    info:
+      path: SlyOS-Info.plist
+      properties:
+        CFBundleDisplayName: SlyOS
+        LSApplicationCategoryType: public.app-category.productivity
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIApplicationSupportsIndirectInputEvents: true
+        # Without a launch screen iOS runs the app letterboxed in a scaled compatibility window.
+        UILaunchScreen: {}
+        # SlyOS draws its own status line, as the Android launcher does.
+        UIStatusBarHidden: true
+        UIViewControllerBasedStatusBarAppearance: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+
+        # Each of these backs a feature that visibly uses it — App Review rejects permissions the
+        # app does not obviously need.
+        NSCameraUsageDescription: SlyOS uses the camera when you open Look mode to identify, read, and remember what you point at.
+        NSMicrophoneUsageDescription: SlyOS uses the microphone only when you choose voice input or a voice workflow.
+        NSSpeechRecognitionUsageDescription: SlyOS transcribes speech only after you tap the voice control.
+        NSPhotoLibraryUsageDescription: SlyOS reads photos you explicitly choose for Look, document, receipt, and memory workflows.
+        NSPhotoLibraryAddUsageDescription: SlyOS saves a document or image to your photos only when you ask it to.
+        NSCalendarsFullAccessUsageDescription: SlyOS reads your calendar only when you ask about your schedule and writes events only after a confirmed request.
+        NSRemindersFullAccessUsageDescription: SlyOS reads and writes reminders only for reminder workflows you explicitly request.
+        NSContactsUsageDescription: SlyOS searches your contacts only when a prompt needs a person, phone number, or email address.
+        NSLocationWhenInUseUsageDescription: SlyOS uses your location when you ask something about where you are, or ask it to share your location.
+        NSFaceIDUsageDescription: SlyOS can lock your brain behind Face ID so only you can read it.
+
+        # Ours. Empty means the feature says so in the UI rather than failing obscurely.
+        GoogleOAuthClientID: ""
+        SupabaseURL: ""
+        SupabaseAnonKey: ""
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.belto.slyos.ios
         PRODUCT_NAME: SlyOS
-        GENERATE_INFOPLIST_FILE: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        INFOPLIST_KEY_CFBundleDisplayName: SlyOS
-        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
-        # Without a launch screen iOS runs the app letterboxed in a compatibility window — black
-        # bands top and bottom, and nothing reaches the edges. This is what makes it full-bleed.
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        # SlyOS draws its own status line (time left, battery right), exactly as the Android
-        # launcher does. Leaving the system bar visible showed the time twice.
-        INFOPLIST_KEY_UIStatusBarHidden: YES
-        INFOPLIST_KEY_UIViewControllerBasedStatusBarAppearance: NO
-        # Portrait only, matching the Android shell.
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
-        # Permission strings are written now because the App Store rejects a build whose usage
-        # description does not say what the data is actually for.
-        INFOPLIST_KEY_NSCameraUsageDescription: SlyOS uses the camera when you open Look mode to identify, read, and remember what you point at.
-        INFOPLIST_KEY_NSMicrophoneUsageDescription: SlyOS uses the microphone only when you choose voice input or a voice workflow.
-        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: SlyOS transcribes speech only after you tap the voice control.
-        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: SlyOS reads photos you explicitly choose for Look, document, receipt, and memory workflows.
-        INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription: SlyOS reads your calendar only when you ask about your schedule and writes events only after a confirmed request.
-        INFOPLIST_KEY_NSContactsUsageDescription: SlyOS searches your contacts only when a prompt needs a person, phone number, or email address.
-        INFOPLIST_KEY_NSRemindersFullAccessUsageDescription: SlyOS reads and writes reminders only for reminder workflows you explicitly request.
-        # Location is used to answer "where am I", to share your location in a message you send, and
-        # to give answers local context. Only when-in-use — SlyOS has no reason to track you in the
-        # background, and asking for Always would be both a rejection risk and a lie.
-        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: SlyOS uses your location when you ask something about where you are, or ask it to share your location.
-        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: SlyOS saves a document or image to your photos only when you ask it to.
-        INFOPLIST_KEY_NSFaceIDUsageDescription: SlyOS can lock your brain behind Face ID so only you can read it.
-        INFOPLIST_KEY_NSMotionUsageDescription: SlyOS uses motion only to tell whether you are travelling when that changes an answer.
-        # Set this to the iOS OAuth client id from Google Cloud Console. It must be an *iOS*
-        # client — Google ties the redirect scheme to the client type, so the Android one is
-        # rejected. Empty means Google sign-in is disabled and the UI says so rather than failing.
-        INFOPLIST_KEY_GoogleOAuthClientID: ""
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_ENTITLEMENTS: SlyOS.entitlements
-    dependencies:
-      - target: ShareExtension
 
   # Reply drafting. iOS forbids reading other apps' notifications, so the honest equivalent is
   # selecting a message anywhere and sharing it here. Runs in its own process, which is why the
