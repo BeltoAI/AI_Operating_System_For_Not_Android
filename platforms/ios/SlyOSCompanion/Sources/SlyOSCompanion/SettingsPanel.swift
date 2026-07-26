@@ -234,6 +234,7 @@ private struct AccountSection: View {
     @State private var busy = false
     @State private var message: String?
     @State private var isError = false
+    @State private var confirmingDelete = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: T.sm) {
@@ -254,6 +255,26 @@ private struct AccountSection: View {
                     .foregroundStyle(isError ? palette.danger : palette.good)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+        .alert("Delete your account?", isPresented: $confirmingDelete) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) { deleteAccount() }
+        } message: {
+            Text("This removes your account and everything synced to it, permanently. What's on "
+                 + "this phone stays until you delete the app.")
+        }
+    }
+
+    private func deleteAccount() {
+        busy = true; message = nil
+        Task {
+            do {
+                try await SupabaseClient.shared.deleteAccount()
+                isError = false; message = "Account deleted."
+            } catch {
+                isError = true; message = error.localizedDescription
+            }
+            busy = false
         }
     }
 
@@ -287,6 +308,10 @@ private struct AccountSection: View {
                     .font(.system(size: T.small))
                     .foregroundStyle(palette.inkFaint)
                 Spacer()
+                // App Review requires account deletion to be reachable from inside the app.
+                Button("Delete account") { confirmingDelete = true }
+                    .font(.system(size: T.small))
+                    .foregroundStyle(palette.danger)
             }
         }
     }

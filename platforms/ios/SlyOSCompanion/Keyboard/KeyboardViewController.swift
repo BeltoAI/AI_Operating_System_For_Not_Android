@@ -34,6 +34,9 @@ final class KeyboardViewController: UIInputViewController {
             },
             nextKeyboard: { [weak self] in
                 self?.advanceToNextInputMode()
+            },
+            deleteBackward: { [weak self] in
+                self?.textDocumentProxy.deleteBackward()
             }
         )
 
@@ -47,7 +50,7 @@ final class KeyboardViewController: UIInputViewController {
             host.view.topAnchor.constraint(equalTo: self.view.topAnchor),
             host.view.bottomAnchor.constraint(equalTo: self.view.bottomAnchor),
             // Tall enough to show a draft without becoming a whole screen.
-            host.view.heightAnchor.constraint(equalToConstant: 268)
+            host.view.heightAnchor.constraint(equalToConstant: hasFullAccess ? 268 : 300)
         ])
         host.didMove(toParent: self)
         self.host = host

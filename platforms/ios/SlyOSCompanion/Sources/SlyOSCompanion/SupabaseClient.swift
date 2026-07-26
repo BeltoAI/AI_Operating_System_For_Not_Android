@@ -220,6 +220,36 @@ final class SupabaseClient {
         if !incoming.isEmpty { SlyStore.shared.insertMany(incoming) }
     }
 
+    // MARK: - Deletion
+
+    /// Delete the account and everything in it.
+    ///
+    /// **App Review requires this.** Guideline 5.1.1(v): any app that lets someone create an account
+    /// must let them delete it from inside the app — not by emailing support, and not by only
+    /// clearing local data.
+    ///
+    /// Two steps, in this order. The rows go first because Row-Level Security lets the user delete
+    /// their own; once the auth user is gone their token is void and the rows would be orphaned.
+    /// The auth record itself needs a server-side function, since no client key may delete a user —
+    /// see `supabase/delete_account.sql`.
+    @MainActor
+    func deleteAccount() async throws {
+        guard isConfigured, let user = userID else { throw AuthError.notConfigured }
+        let token = try await accessToken()
+
+        _ = try await send("DELETE", "/rest/v1/brain_items?user_id=eq.\(user)",
+                           token: token, extraHeaders: ["Prefer": "return=minimal"])
+        _ = try? await send("DELETE", "/rest/v1/vault_items?user_id=eq.\(user)",
+                            token: token, extraHeaders: ["Prefer": "return=minimal"])
+        _ = try? await send("DELETE", "/rest/v1/profiles?id=eq.\(user)",
+                            token: token, extraHeaders: ["Prefer": "return=minimal"])
+
+        // The auth user. Fails loudly rather than silently leaving a deleted-looking account behind.
+        _ = try await send("POST", "/rest/v1/rpc/delete_account", body: [:], token: token)
+
+        signOut()
+    }
+
     // MARK: - Transport
 
     private func request(_ method: String, _ path: String, token: String?,

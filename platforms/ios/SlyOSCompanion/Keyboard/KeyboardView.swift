@@ -8,6 +8,7 @@ struct KeyboardView: View {
     let insert: (String) -> Void
     let deleteAll: () -> Void
     let nextKeyboard: () -> Void
+    let deleteBackward: () -> Void
 
     @State private var draft = ""
     @State private var working = false
@@ -37,6 +38,7 @@ struct KeyboardView: View {
 
             if !hasFullAccess {
                 needsAccess
+                BasicKeys(insert: insert, delete: deleteBackward)
             } else if let failure {
                 Text(failure)
                     .font(.system(size: T.small)).foregroundStyle(p.danger)
@@ -89,9 +91,9 @@ struct KeyboardView: View {
     }
 
     private var needsAccess: some View {
-        Text("Turn on Full Access for the SlyOS keyboard (Settings → General → Keyboard → "
-             + "Keyboards → SlyOS). It needs the network to reach your model and your brain to "
-             + "sound like you. Without it this keyboard can type but knows nothing.")
+        Text("Drafting needs Full Access — Settings → General → Keyboard → Keyboards → SlyOS. "
+             + "It's used for two things only: the network, to reach your model, and the shared "
+             + "container, to read your brain. You can keep typing without it.")
             .font(.system(size: T.caption)).foregroundStyle(p.inkFaint)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -170,5 +172,58 @@ struct KeyboardView: View {
             }
             working = false
         }
+    }
+}
+
+
+/// A plain keyboard, shown when Full Access is off.
+///
+/// App Review requires a keyboard extension to be a usable keyboard without Full Access — an
+/// extension that only shows a "turn this on" notice is a rejection. It is also simply correct:
+/// someone who declines the permission should still be able to type.
+private struct BasicKeys: View {
+    let insert: (String) -> Void
+    let delete: () -> Void
+
+    @State private var shifted = true
+    @Environment(\.palette) private var p
+
+    private let rows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ForEach(rows, id: \.self) { row in
+                HStack(spacing: 5) {
+                    if row == "zxcvbnm" {
+                        key(shifted ? "⇧" : "⇧", wide: true) { shifted.toggle() }
+                    }
+                    ForEach(Array(row), id: \.self) { c in
+                        let ch = shifted ? String(c).uppercased() : String(c)
+                        key(ch) { insert(ch); shifted = false }
+                    }
+                    if row == "zxcvbnm" {
+                        key("⌫", wide: true) { delete() }
+                    }
+                }
+            }
+            HStack(spacing: 5) {
+                key("space", wide: true) { insert(" ") }
+                key(".") { insert(".") }
+                key(",") { insert(",") }
+                key("return", wide: true) { insert("\n") }
+            }
+        }
+    }
+
+    private func key(_ label: String, wide: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: label.count > 1 ? 12 : 17))
+                .foregroundStyle(p.ink)
+                .frame(maxWidth: .infinity)
+                .frame(height: 38)
+                .background(RoundedRectangle(cornerRadius: 6).fill(p.bgElevated))
+        }
+        .frame(maxWidth: wide ? .infinity : nil)
     }
 }

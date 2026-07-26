@@ -17,6 +17,7 @@ targets:
     sources:
       - path: Sources/SlyOSCompanion
       - path: Assets.xcassets
+      - path: PrivacyInfo.xcprivacy
     dependencies:
       - target: ShareExtension
       - target: Keyboard
@@ -30,6 +31,8 @@ targets:
       path: SlyOS-Info.plist
       properties:
         CFBundleDisplayName: SlyOS
+        # Only standard HTTPS — declaring this stops every upload being held for export review.
+        ITSAppUsesNonExemptEncryption: false
         LSApplicationCategoryType: public.app-category.productivity
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
@@ -78,6 +81,7 @@ targets:
     platform: iOS
     sources:
       - path: Keyboard
+      - path: PrivacyInfo.xcprivacy
       - path: Sources/SlyOSCompanion/SlyTheme.swift
       - path: Sources/SlyOSCompanion/SlyCard.swift
       - path: Sources/SlyOSCompanion/SlyOrbit.swift
@@ -124,6 +128,7 @@ targets:
     platform: iOS
     sources:
       - path: ShareExtension
+      - path: PrivacyInfo.xcprivacy
       # Only what the extension actually needs. Permissions, Importers, LookMode and the panels are
       # deliberately excluded: they reach UIApplication.shared and heavy frameworks an extension
       # neither may use nor needs.
