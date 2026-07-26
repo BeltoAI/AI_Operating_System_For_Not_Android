@@ -101,6 +101,7 @@ enum AgentClient {
             contain the answer, say so in one sentence and say what would be needed — do not \
             invent, and do not infer an action happened because it was discussed.
             """
+            if lastCorpusWasUntrusted { s += Untrusted.clause }
         } else {
             s += """
 
@@ -144,12 +145,20 @@ enum AgentClient {
         return "\n\nWHERE THE OWNER IS RIGHT NOW: \(place)"
     }
 
+    /// Whether the last assembled corpus contained third-party content.
+    ///
+    /// Set by `corpus`, read when building the system prompt. Messages and mail are written by other
+    /// people, and a model that treats them as instructions is one crafted message away from doing
+    /// what a stranger asked instead of what its owner asked.
+    nonisolated(unsafe) private(set) static var lastCorpusWasUntrusted = false
+
     /// Gather the memories most relevant to a question, inside the budget.
     static func corpus(for question: String) -> String {
         let store = SlyStore.shared
         var hits = store.search(question, limit: 40)
         // With nothing matched, recent memory is better than none — it is at least about the owner.
         if hits.isEmpty { hits = store.recent(limit: 12) }
+        lastCorpusWasUntrusted = Untrusted.present(in: hits)
 
         var out: [String] = []
         var used = 0

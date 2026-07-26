@@ -108,6 +108,8 @@ struct SettingsPanel: View {
 
                     group("GOOGLE", p: p) { GoogleSection(palette: p) }
 
+                    group("OPENCLAW", p: p) { OpenClawSection(palette: p) }
+
                     group("IMPORT", p: p) {
                         VStack(alignment: .leading, spacing: 0) {
                             Text("Everything imported stays on this phone.")
@@ -473,5 +475,101 @@ private struct GoogleSection: View {
     private func report(success: String? = nil) {
         if let e = backup.lastError { isError = true; note = e }
         else { isError = false; note = success ?? "Backed up to your Drive." }
+    }
+}
+
+
+/// The owner's own OpenClaw gateway.
+///
+/// The copy here is deliberately blunt about the risk. Thousands of gateways sit on the public
+/// internet with no token, and anyone who finds one can read its history or instruct it. Someone
+/// pointing SlyOS at theirs should know what they are connecting to.
+private struct OpenClawSection: View {
+    let palette: Palette
+
+    @State private var claw = OpenClaw.shared
+    @State private var host = ""
+    @State private var token = ""
+    @State private var allowActions = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: T.sm) {
+            Text("Run OpenClaw on your own machine and SlyOS can read what it sees — WhatsApp, "
+                 + "Telegram, Slack — which iOS itself will never hand over. It can also answer "
+                 + "through it, so nothing leaves your hardware.")
+                .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            field("Address", text: $host, placeholder: "192.168.1.20:18789", secure: false)
+            field("Gateway token", text: $token, placeholder: "required", secure: true)
+
+            Text("A token is not optional here. Gateways left without one can be read and "
+                 + "instructed by anyone who finds them, and SlyOS won't connect to one.")
+                .font(.system(size: T.caption)).foregroundStyle(palette.danger)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Toggle(isOn: $allowActions) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Let it act, not just read")
+                        .font(.system(size: T.body)).foregroundStyle(palette.ink)
+                    Text("Off by default. Even on, every action asks you first and is recorded in "
+                         + "Sent for you.")
+                        .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(palette.accent)
+            .onChange(of: allowActions) { _, on in claw.allowActions = on }
+
+            HStack(spacing: T.sm) {
+                Button {
+                    claw.host = host
+                    claw.token = token
+                    Task { await claw.check() }
+                } label: {
+                    Text(claw.checking ? "Checking…" : "Save & test")
+                        .font(.system(size: T.small, weight: .medium))
+                        .foregroundStyle(palette.bgElevated)
+                        .padding(.horizontal, T.md).padding(.vertical, 9)
+                        .background(Capsule().fill(palette.accent))
+                }
+                .disabled(claw.checking)
+                Spacer()
+            }
+
+            if let status = claw.status {
+                Text(status)
+                    .font(.system(size: T.caption))
+                    .foregroundStyle(claw.connected ? palette.good : palette.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .onAppear {
+            host = claw.host
+            token = claw.token
+            allowActions = claw.allowActions
+        }
+    }
+
+    private func field(_ label: String, text: Binding<String>,
+                       placeholder: String, secure: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+            Group {
+                if secure {
+                    SecureField("", text: text, prompt:
+                        Text(placeholder).foregroundStyle(palette.inkFaint))
+                } else {
+                    TextField("", text: text, prompt:
+                        Text(placeholder).foregroundStyle(palette.inkFaint))
+                }
+            }
+            .font(.system(size: T.body))
+            .foregroundStyle(palette.ink)
+            .textFieldStyle(.plain)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+            Rectangle().fill(palette.hairline).frame(height: 1)
+        }
     }
 }

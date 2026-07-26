@@ -10,6 +10,9 @@ struct SlyOSCompanionApp: App {
         // Location reaches UIKit APIs an extension cannot use, so it is handed to the client here
         // rather than referenced from it.
         AgentClient.placeResolver = { await LocationProvider.shared.describe() }
+        // Same reason: ModelRouter is shared with the extension, which carries no gateway client.
+        ModelRouter.openClaw = (baseURL: { OpenClaw.shared.baseURL },
+                                token: { OpenClaw.shared.token })
     }
 
     var body: some Scene {

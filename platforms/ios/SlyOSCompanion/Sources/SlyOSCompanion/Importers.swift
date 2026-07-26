@@ -14,7 +14,7 @@ final class Importers {
     static let shared = Importers()
 
     enum Source: String, CaseIterable, Identifiable {
-        case contacts, calendar, mail
+        case contacts, calendar, mail, openclaw
         var id: String { rawValue }
 
         var title: String {
@@ -22,6 +22,7 @@ final class Importers {
             case .contacts: "Contacts"
             case .calendar: "Calendar"
             case .mail: "Mail"
+            case .openclaw: "OpenClaw"
             }
         }
 
@@ -30,6 +31,7 @@ final class Importers {
             case .contacts: "Names, numbers and how you reach people"
             case .calendar: "Who you met, when, and about what"
             case .mail: "Everything you've written and received"
+            case .openclaw: "WhatsApp, Telegram and Slack, via your own gateway"
             }
         }
 
@@ -38,6 +40,7 @@ final class Importers {
             case .contacts: "person.crop.circle.fill"
             case .calendar: "calendar"
             case .mail: "envelope.fill"
+            case .openclaw: "antenna.radiowaves.left.and.right"
             }
         }
 
@@ -187,6 +190,23 @@ final class Importers {
             return await finish(.mail, count: count)
         } catch {
             return await finish(.mail, error: error.localizedDescription)
+        }
+    }
+
+    // MARK: - OpenClaw
+
+    /// The only route to WhatsApp and Telegram on iPhone: a gateway the owner runs themselves.
+    @discardableResult
+    func importOpenClaw() async -> Int {
+        await MainActor.run { status[.openclaw, default: Status()].running = true }
+        guard OpenClaw.shared.isConfigured else {
+            return await finish(.openclaw, error: "Set your OpenClaw address and token in Settings.")
+        }
+        do {
+            let n = try await OpenClaw.shared.importMessages()
+            return await finish(.openclaw, count: n)
+        } catch {
+            return await finish(.openclaw, error: error.localizedDescription)
         }
     }
 

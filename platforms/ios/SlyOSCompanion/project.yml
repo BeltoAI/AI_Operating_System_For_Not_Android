@@ -86,6 +86,9 @@ targets:
       - path: Sources/SlyOSCompanion/Keychain.swift
       - path: Sources/SlyOSCompanion/ModelRouter.swift
       - path: Sources/SlyOSCompanion/AgentClient.swift
+      # The extension drafts replies to text from other apps — the one place prompt injection is
+      # most likely — so the untrusted-content rules travel with it.
+      - path: Sources/SlyOSCompanion/OpenClawPolicy.swift
       - path: Sources/SlyOSCompanion/SlySettings.swift
       - path: Sources/SlyOSCompanion/SlyProfile.swift
     configFiles:

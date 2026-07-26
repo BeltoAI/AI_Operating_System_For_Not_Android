@@ -143,13 +143,16 @@ struct ShareDraftView: View {
                 // The brain answers here exactly as it does in the app — same store, same profile,
                 // because both live in the shared App Group container.
                 let context = AgentClient.corpus(for: incoming)
+                // The message being replied to was written by someone else, by definition. This is
+                // the single most injectable surface in the app: whatever arrives here is text a
+                // stranger chose, handed straight to a model.
                 let system = """
                     You are drafting a reply *as the owner*, in their voice, to the message below. \
                     Output only the reply itself — no preamble, no quotes, no explanation, no \
                     subject line. Match how they actually write: same length, same register, same \
                     directness. If the message needs a decision only they can make, write the reply \
                     that asks for what you'd need rather than inventing an answer.
-                    """
+                    """ + Untrusted.clause
                 var user = "MESSAGE TO REPLY TO:\n\(incoming)"
                 if !context.isEmpty { user = "WHAT YOU KNOW:\n\(context)\n\n" + user }
 

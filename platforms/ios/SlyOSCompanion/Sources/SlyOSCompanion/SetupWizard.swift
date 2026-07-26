@@ -255,6 +255,7 @@ struct ImportRow: View {
                     case .contacts: await importers.importContacts()
                     case .calendar: await importers.importCalendar()
                     case .mail: await importers.importMail()
+                    case .openclaw: await importers.importOpenClaw()
                     }
                 }
             } label: {

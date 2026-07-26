@@ -16,7 +16,7 @@ final class ModelRouter {
     }
 
     enum Provider: String, CaseIterable, Identifiable {
-        case anthropic, openai, gemini, groq, cerebras, mistral
+        case anthropic, openai, gemini, groq, cerebras, mistral, openclaw
 
         var id: String { rawValue }
 
@@ -28,6 +28,7 @@ final class ModelRouter {
             case .groq: "Groq"
             case .cerebras: "Cerebras"
             case .mistral: "Mistral"
+            case .openclaw: "OpenClaw (your own)"
             }
         }
 
@@ -40,6 +41,7 @@ final class ModelRouter {
             case .groq: "https://console.groq.com/keys"
             case .cerebras: "https://cloud.cerebras.ai/"
             case .mistral: "https://console.mistral.ai/api-keys/"
+            case .openclaw: "https://docs.openclaw.ai/gateway/security"
             }
         }
 
@@ -47,7 +49,8 @@ final class ModelRouter {
         /// much smaller ask when one of the options costs nothing.
         var isFree: Bool {
             switch self {
-            case .gemini, .groq, .cerebras, .mistral: true
+            // Free in the sense that matters: it runs on hardware the owner already pays for.
+            case .gemini, .groq, .cerebras, .mistral, .openclaw: true
             case .anthropic, .openai: false
             }
         }
@@ -56,7 +59,8 @@ final class ModelRouter {
         var canSeeImages: Bool {
             switch self {
             case .anthropic, .openai, .gemini: true
-            case .groq, .cerebras, .mistral: false
+            // Depends on the model the owner has configured there, so assume not.
+            case .groq, .cerebras, .mistral, .openclaw: false
             }
         }
 
@@ -82,6 +86,8 @@ final class ModelRouter {
                 tier == .cheap ? "llama3.1-8b" : "llama-3.3-70b"
             case .mistral:
                 tier == .heavy ? "mistral-large-latest" : "mistral-small-latest"
+            // Whatever the gateway is pointed at; it routes by its own configuration.
+            case .openclaw: "default"
             }
         }
 
@@ -93,9 +99,18 @@ final class ModelRouter {
             case .groq: "https://api.groq.com/openai/v1/chat/completions"
             case .cerebras: "https://api.cerebras.ai/v1/chat/completions"
             case .mistral: "https://api.mistral.ai/v1/chat/completions"
+            // The owner's own machine — resolved at call time, not baked in.
+            case .openclaw: (ModelRouter.openClaw?.baseURL() ?? "") + "/v1/chat/completions"
             }
         }
     }
+
+    /// How to reach the owner's OpenClaw gateway, supplied by the app at launch.
+    ///
+    /// A closure rather than a direct reference to `OpenClaw`: this file is compiled into the share
+    /// extension too, and the extension deliberately does not carry the gateway client. Where it is
+    /// nil, OpenClaw simply is not among the providers.
+    nonisolated(unsafe) static var openClaw: (baseURL: () -> String, token: () -> String)?
 
     private let keychain = Keychain(service: "com.belto.slyos.models")
 
@@ -103,7 +118,9 @@ final class ModelRouter {
     private(set) var revision = 0
 
     func key(for p: Provider) -> String {
-        keychain.string(for: p.rawValue) ?? ""
+        // OpenClaw authenticates with its gateway token, which lives with the rest of its config.
+        if p == .openclaw { return Self.openClaw?.token() ?? "" }
+        return keychain.string(for: p.rawValue) ?? ""
     }
 
     func setKey(_ value: String, for p: Provider) {
@@ -112,7 +129,13 @@ final class ModelRouter {
         revision += 1
     }
 
-    func hasKey(for p: Provider) -> Bool { !key(for: p).isEmpty }
+    func hasKey(for p: Provider) -> Bool {
+        if p == .openclaw {
+            guard let claw = Self.openClaw else { return false }
+            return !claw.baseURL().isEmpty && !claw.token().isEmpty
+        }
+        return !key(for: p).isEmpty
+    }
 
     var configuredProviders: [Provider] { Provider.allCases.filter(hasKey) }
     var isConfigured: Bool { !configuredProviders.isEmpty }
@@ -122,7 +145,7 @@ final class ModelRouter {
     /// A request is only ever sent to a provider the user has a key for, and `needsVision` removes
     /// text-only providers entirely rather than letting a photo silently become a text prompt.
     func chain(tier: Tier, needsVision: Bool = false) -> [Provider] {
-        let order: [Provider] = [.anthropic, .openai, .gemini, .groq, .cerebras, .mistral]
+        let order: [Provider] = [.openclaw, .anthropic, .openai, .gemini, .groq, .cerebras, .mistral]
         return order.filter { hasKey(for: $0) && (!needsVision || $0.canSeeImages) }
     }
 }
