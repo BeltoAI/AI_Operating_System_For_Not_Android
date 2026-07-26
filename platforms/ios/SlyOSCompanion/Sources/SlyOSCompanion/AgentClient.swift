@@ -127,13 +127,20 @@ enum AgentClient {
     /// Gated rather than always-on: taking a location fix for "summarise this email" would waste
     /// power and ask for a permission the question never needed. If location is refused this
     /// silently contributes nothing.
+    /// Resolves the owner's location, injected by the app at launch.
+    ///
+    /// A closure rather than a direct call to `LocationProvider`, because that reaches `Permissions`
+    /// and then `UIApplication.shared`, which is unavailable in an app extension. The share
+    /// extension leaves this nil and simply contributes no location.
+    static var placeResolver: (() async -> String?)?
+
     private static func placeBlock(for question: String) async -> String {
         let q = question.lowercased()
         let wantsPlace = ["where am i", "near me", "nearby", "around here", "my location",
                           "closest", "local", "weather", "directions", "how far"]
             .contains { q.contains($0) }
-        guard wantsPlace else { return "" }
-        guard let place = await LocationProvider.shared.describe() else { return "" }
+        guard wantsPlace, let resolver = placeResolver else { return "" }
+        guard let place = await resolver() else { return "" }
         return "\n\nWHERE THE OWNER IS RIGHT NOW: \(place)"
     }
 

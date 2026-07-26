@@ -8,30 +8,67 @@
 
 /* Begin PBXBuildFile section */
 		0472C22638E104B058E9A8B6 /* ResearchPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60ADFD44B77D3E3412AB8B54 /* ResearchPanel.swift */; };
+		0A4E72BE6C3E04DB4FB18687 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AC1D9FD6F4098CC9EFB2478 /* ShareViewController.swift */; };
 		1B14AEC92C9B4385A97BE147 /* SettingsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E80E68097BDA960C6DE4CDD7 /* SettingsPanel.swift */; };
 		2BC7D9C202283C967DBD633C /* GoogleCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A873207FE09982F31D1267DE /* GoogleCalendar.swift */; };
+		345EB65629376EC203E90B91 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA6D40631C792E1579C73E1 /* Keychain.swift */; };
 		353D222C4DDE1EDD3EB4A0F0 /* Importers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60A1424E9472400660E3D862 /* Importers.swift */; };
+		42EA4B1552F2E01061EB0A41 /* SharedContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81A437CA15FE1138F42223EB /* SharedContainer.swift */; };
 		4AFAE3B3A68B15E75B6B11B1 /* VoiceInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49072383C2A2EB94CA868482 /* VoiceInput.swift */; };
 		4FA82C224E8DA6767D351838 /* LookMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94337A013ED9A6659DBA1390 /* LookMode.swift */; };
 		50A476569BFC09A9A92F9621 /* SlyOSCompanionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4B3CFA2B3E4B6491DF7EB34 /* SlyOSCompanionApp.swift */; };
+		5139D68062B729E7CCEFBC72 /* SlyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12DEC5C721238BE5B500EC98 /* SlyStore.swift */; };
 		5544C7ADA1F40CB51CBE946F /* BrainPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A88903B7D709554F4ECB83F /* BrainPanel.swift */; };
+		55A8D744EB6AD8A591FD9715 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA6D40631C792E1579C73E1 /* Keychain.swift */; };
+		57EB05CAA1C685F6DAAF85FF /* SharedContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81A437CA15FE1138F42223EB /* SharedContainer.swift */; };
 		5E5005B159CD132F5FFF99FD /* SlySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA79A7079293CD334D9916D9 /* SlySettings.swift */; };
 		7482762E246CE1EA61998D5C /* SlyTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63D2B0AA35C7F9C6FA2FB4B5 /* SlyTheme.swift */; };
 		7C61ADEA8656856813A291CD /* PowersPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76C0A4876A1147B263A3F2BF /* PowersPanel.swift */; };
 		8013380E5E77748EA3FAFEFC /* ModelRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5EB5629BDF4B7C073699E99 /* ModelRouter.swift */; };
 		9F846CF60BF2C5FEBF3A5CC7 /* SlyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12DEC5C721238BE5B500EC98 /* SlyStore.swift */; };
+		A09C646299B663701E105968 /* SlyProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D76C70768AD721C04683F45 /* SlyProfile.swift */; };
+		A1EE611EAC4B360FB6324053 /* AgentClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 823B50057D5D911E4372FEC8 /* AgentClient.swift */; };
 		A38688510E6E0A766C3034C8 /* SlyOSIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5B357607F64CDEC75DABE02 /* SlyOSIntents.swift */; };
 		A6FF0D15BEC0C3C722465085 /* NowPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3401E8671D67F44A46EDC2BB /* NowPanel.swift */; };
 		ABD6034BEF54130C6FE50954 /* GoogleAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = B51B0558216DA08F49087280 /* GoogleAuth.swift */; };
 		AD436C40F6EF0F4C1F77BC66 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F54C87A46B0722640AF35C10 /* AppState.swift */; };
+		B289A58285630F386AC83F37 /* SlySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA79A7079293CD334D9916D9 /* SlySettings.swift */; };
 		B32E2C56D1DACCCED69F47EE /* Permissions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2602D15FEC1B9DF410ABD945 /* Permissions.swift */; };
+		B89D971C1183278EFAC27D45 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 86DCEFE20C8F74D6B7E27957 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C0559D5711E08FC8DE2C4C09 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B147147BCF1ADF129C7C8E9A /* Assets.xcassets */; };
 		CA4D0878FACFB992FB96EFC2 /* SetupWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 714B64AEDD553E54CCB95112 /* SetupWizard.swift */; };
 		CF77C831F7E2DA9AA08C3EE7 /* MemoryGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C4BF3D44F89DFC93DBFE7FA /* MemoryGraph.swift */; };
 		D15B7E7EFBC427D8AD1206CF /* AgentClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 823B50057D5D911E4372FEC8 /* AgentClient.swift */; };
 		E3912014B27C9DBD7D980995 /* SlyProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D76C70768AD721C04683F45 /* SlyProfile.swift */; };
+		E68FBFB675CF0D7893991F0B /* ModelRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5EB5629BDF4B7C073699E99 /* ModelRouter.swift */; };
+		EBFB61AFF9A039970411F930 /* SlyTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63D2B0AA35C7F9C6FA2FB4B5 /* SlyTheme.swift */; };
 		EEADEE36DA28478058337A05 /* SlyNav.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4A1C2638362A31AB1222256 /* SlyNav.swift */; };
 		F8809925066EE3D9105B3CAB /* AppView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6C0DD650891378A27E1161D /* AppView.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D5AAD87E2FB40E2B67532093 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DFF8B44D7C8D4D71432A7A90 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D075F8CC82A72FE3067570C1;
+			remoteInfo = ShareExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		BDB2817EC74FDB40DB8DE4ED /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B89D971C1183278EFAC27D45 /* ShareExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		12DEC5C721238BE5B500EC98 /* SlyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlyStore.swift; sourceTree = "<group>"; };
@@ -45,20 +82,27 @@
 		63D2B0AA35C7F9C6FA2FB4B5 /* SlyTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlyTheme.swift; sourceTree = "<group>"; };
 		714B64AEDD553E54CCB95112 /* SetupWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupWizard.swift; sourceTree = "<group>"; };
 		76C0A4876A1147B263A3F2BF /* PowersPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowersPanel.swift; sourceTree = "<group>"; };
+		7AC1D9FD6F4098CC9EFB2478 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		81A437CA15FE1138F42223EB /* SharedContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedContainer.swift; sourceTree = "<group>"; };
 		823B50057D5D911E4372FEC8 /* AgentClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentClient.swift; sourceTree = "<group>"; };
+		86DCEFE20C8F74D6B7E27957 /* ShareExtension.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		94337A013ED9A6659DBA1390 /* LookMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LookMode.swift; sourceTree = "<group>"; };
 		9D76C70768AD721C04683F45 /* SlyProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlyProfile.swift; sourceTree = "<group>"; };
 		A4A1C2638362A31AB1222256 /* SlyNav.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlyNav.swift; sourceTree = "<group>"; };
 		A4B3CFA2B3E4B6491DF7EB34 /* SlyOSCompanionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlyOSCompanionApp.swift; sourceTree = "<group>"; };
 		A5EB5629BDF4B7C073699E99 /* ModelRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelRouter.swift; sourceTree = "<group>"; };
 		A873207FE09982F31D1267DE /* GoogleCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleCalendar.swift; sourceTree = "<group>"; };
+		ACA5FE0A273E1BF5B7C64F95 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		B147147BCF1ADF129C7C8E9A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B51B0558216DA08F49087280 /* GoogleAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleAuth.swift; sourceTree = "<group>"; };
+		BD0CB831912BB9C31CE22922 /* ShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShareExtension.entitlements; sourceTree = "<group>"; };
 		C5B357607F64CDEC75DABE02 /* SlyOSIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlyOSIntents.swift; sourceTree = "<group>"; };
 		C6C0DD650891378A27E1161D /* AppView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppView.swift; sourceTree = "<group>"; };
 		C6E7AD173A84A6BF6FDBC9BC /* SlyOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SlyOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CA79A7079293CD334D9916D9 /* SlySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlySettings.swift; sourceTree = "<group>"; };
 		E80E68097BDA960C6DE4CDD7 /* SettingsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPanel.swift; sourceTree = "<group>"; };
 		F54C87A46B0722640AF35C10 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		FBA6D40631C792E1579C73E1 /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -72,6 +116,7 @@
 				B51B0558216DA08F49087280 /* GoogleAuth.swift */,
 				A873207FE09982F31D1267DE /* GoogleCalendar.swift */,
 				60A1424E9472400660E3D862 /* Importers.swift */,
+				FBA6D40631C792E1579C73E1 /* Keychain.swift */,
 				94337A013ED9A6659DBA1390 /* LookMode.swift */,
 				3C4BF3D44F89DFC93DBFE7FA /* MemoryGraph.swift */,
 				A5EB5629BDF4B7C073699E99 /* ModelRouter.swift */,
@@ -81,6 +126,7 @@
 				60ADFD44B77D3E3412AB8B54 /* ResearchPanel.swift */,
 				E80E68097BDA960C6DE4CDD7 /* SettingsPanel.swift */,
 				714B64AEDD553E54CCB95112 /* SetupWizard.swift */,
+				81A437CA15FE1138F42223EB /* SharedContainer.swift */,
 				A4A1C2638362A31AB1222256 /* SlyNav.swift */,
 				A4B3CFA2B3E4B6491DF7EB34 /* SlyOSCompanionApp.swift */,
 				C5B357607F64CDEC75DABE02 /* SlyOSIntents.swift */,
@@ -94,9 +140,20 @@
 			path = Sources/SlyOSCompanion;
 			sourceTree = "<group>";
 		};
+		9BDFC20A0D9068090FCF3BA5 /* ShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				ACA5FE0A273E1BF5B7C64F95 /* Info.plist */,
+				BD0CB831912BB9C31CE22922 /* ShareExtension.entitlements */,
+				7AC1D9FD6F4098CC9EFB2478 /* ShareViewController.swift */,
+			);
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
 		A184B57CCD28A682ED10263A /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				86DCEFE20C8F74D6B7E27957 /* ShareExtension.appex */,
 				C6E7AD173A84A6BF6FDBC9BC /* SlyOS.app */,
 			);
 			name = Products;
@@ -105,6 +162,8 @@
 		BFF4312533C4043D262AD6CF = {
 			isa = PBXGroup;
 			children = (
+				B147147BCF1ADF129C7C8E9A /* Assets.xcassets */,
+				9BDFC20A0D9068090FCF3BA5 /* ShareExtension */,
 				4F538C61FCF597CAA3B9B9C1 /* SlyOSCompanion */,
 				A184B57CCD28A682ED10263A /* Products */,
 			);
@@ -113,15 +172,35 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		D075F8CC82A72FE3067570C1 /* ShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EB10157A00300CDA675B6904 /* Build configuration list for PBXNativeTarget "ShareExtension" */;
+			buildPhases = (
+				9B7A230792A189128970DE56 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ShareExtension;
+			packageProductDependencies = (
+			);
+			productName = ShareExtension;
+			productReference = 86DCEFE20C8F74D6B7E27957 /* ShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		E48885A27C1DB89214B88919 /* SlyOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = DFBD9619E9E168466D48E4A5 /* Build configuration list for PBXNativeTarget "SlyOS" */;
 			buildPhases = (
 				3F6FC21E84E3E70EFE170D5C /* Sources */,
+				90EA4555D1896B1DA2177713 /* Resources */,
+				BDB2817EC74FDB40DB8DE4ED /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				4FA92A948566E79386E9716F /* PBXTargetDependency */,
 			);
 			name = SlyOS;
 			packageProductDependencies = (
@@ -139,6 +218,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					D075F8CC82A72FE3067570C1 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
 					E48885A27C1DB89214B88919 = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
@@ -159,10 +242,22 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				D075F8CC82A72FE3067570C1 /* ShareExtension */,
 				E48885A27C1DB89214B88919 /* SlyOS */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		90EA4555D1896B1DA2177713 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0559D5711E08FC8DE2C4C09 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		3F6FC21E84E3E70EFE170D5C /* Sources */ = {
@@ -176,6 +271,7 @@
 				ABD6034BEF54130C6FE50954 /* GoogleAuth.swift in Sources */,
 				2BC7D9C202283C967DBD633C /* GoogleCalendar.swift in Sources */,
 				353D222C4DDE1EDD3EB4A0F0 /* Importers.swift in Sources */,
+				345EB65629376EC203E90B91 /* Keychain.swift in Sources */,
 				4FA82C224E8DA6767D351838 /* LookMode.swift in Sources */,
 				CF77C831F7E2DA9AA08C3EE7 /* MemoryGraph.swift in Sources */,
 				8013380E5E77748EA3FAFEFC /* ModelRouter.swift in Sources */,
@@ -185,6 +281,7 @@
 				0472C22638E104B058E9A8B6 /* ResearchPanel.swift in Sources */,
 				1B14AEC92C9B4385A97BE147 /* SettingsPanel.swift in Sources */,
 				CA4D0878FACFB992FB96EFC2 /* SetupWizard.swift in Sources */,
+				42EA4B1552F2E01061EB0A41 /* SharedContainer.swift in Sources */,
 				EEADEE36DA28478058337A05 /* SlyNav.swift in Sources */,
 				50A476569BFC09A9A92F9621 /* SlyOSCompanionApp.swift in Sources */,
 				A38688510E6E0A766C3034C8 /* SlyOSIntents.swift in Sources */,
@@ -196,7 +293,31 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9B7A230792A189128970DE56 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A1EE611EAC4B360FB6324053 /* AgentClient.swift in Sources */,
+				55A8D744EB6AD8A591FD9715 /* Keychain.swift in Sources */,
+				E68FBFB675CF0D7893991F0B /* ModelRouter.swift in Sources */,
+				0A4E72BE6C3E04DB4FB18687 /* ShareViewController.swift in Sources */,
+				57EB05CAA1C685F6DAAF85FF /* SharedContainer.swift in Sources */,
+				A09C646299B663701E105968 /* SlyProfile.swift in Sources */,
+				B289A58285630F386AC83F37 /* SlySettings.swift in Sources */,
+				5139D68062B729E7CCEFBC72 /* SlyStore.swift in Sources */,
+				EBFB61AFF9A039970411F930 /* SlyTheme.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4FA92A948566E79386E9716F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D075F8CC82A72FE3067570C1 /* ShareExtension */;
+			targetProxy = D5AAD87E2FB40E2B67532093 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		233339BAF79CDFAEF7DC2A0A /* Release */ = {
@@ -261,6 +382,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SlyOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
@@ -300,6 +422,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SlyOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = "";
@@ -400,6 +523,48 @@
 			};
 			name = Debug;
 		};
+		9BD066C99E4BE97C7D64BEE5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SlyOS;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.belto.slyos.ios.share;
+				PRODUCT_NAME = SlyOSShare;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		DC116CF279300488948D5D1A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SlyOS;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.belto.slyos.ios.share;
+				PRODUCT_NAME = SlyOSShare;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -417,6 +582,15 @@
 			buildConfigurations = (
 				6AEC0F39A554D398AC6599CE /* Debug */,
 				4EFDA7CA52E2222324AC3D84 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EB10157A00300CDA675B6904 /* Build configuration list for PBXNativeTarget "ShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9BD066C99E4BE97C7D64BEE5 /* Debug */,
+				DC116CF279300488948D5D1A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

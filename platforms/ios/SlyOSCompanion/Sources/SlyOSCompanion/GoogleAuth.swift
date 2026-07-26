@@ -263,39 +263,3 @@ extension GoogleAuth: ASWebAuthenticationPresentationContextProviding {
             .first ?? ASPresentationAnchor()
     }
 }
-
-/// Minimal Keychain wrapper for the OAuth tokens.
-///
-/// `kSecAttrAccessibleAfterFirstUnlock` rather than the default: a background refresh of mail or
-/// calendar has to work while the phone is still locked, which the stricter classes forbid.
-struct Keychain {
-    let service: String
-
-    private func query(_ account: String) -> [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrService as String: service,
-         kSecAttrAccount as String: account]
-    }
-
-    func set(_ value: String, for account: String) {
-        var q = query(account)
-        SecItemDelete(q as CFDictionary)
-        q[kSecValueData as String] = Data(value.utf8)
-        q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(q as CFDictionary, nil)
-    }
-
-    func string(for account: String) -> String? {
-        var q = query(account)
-        q[kSecReturnData as String] = true
-        q[kSecMatchLimit as String] = kSecMatchLimitOne
-        var out: CFTypeRef?
-        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
-              let data = out as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    func remove(_ account: String) {
-        SecItemDelete(query(account) as CFDictionary)
-    }
-}

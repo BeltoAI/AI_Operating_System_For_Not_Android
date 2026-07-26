@@ -32,9 +32,11 @@ final class SlyStore {
     // MARK: - Schema
 
     private func open() {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        // Shared container, so the share extension reads the same brain the app does.
+        SharedContainer.migrateIfNeeded()
+        let dir = SharedContainer.directory
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let path = dir.appendingPathComponent("slyos-brain.sqlite").path
+        let path = SharedContainer.databaseURL.path
 
         guard sqlite3_open(path, &db) == SQLITE_OK else {
             assertionFailure("brain: could not open \(path)")

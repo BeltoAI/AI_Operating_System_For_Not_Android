@@ -16,11 +16,13 @@ targets:
     platform: iOS
     sources:
       - path: Sources/SlyOSCompanion
+      - path: Assets.xcassets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.belto.slyos.ios
         PRODUCT_NAME: SlyOS
         GENERATE_INFOPLIST_FILE: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: SlyOS
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
@@ -56,3 +58,47 @@ targets:
         INFOPLIST_KEY_GoogleOAuthClientID: ""
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
+        CODE_SIGN_ENTITLEMENTS: SlyOS.entitlements
+    dependencies:
+      - target: ShareExtension
+
+  # Reply drafting. iOS forbids reading other apps' notifications, so the honest equivalent is
+  # selecting a message anywhere and sharing it here. Runs in its own process, which is why the
+  # brain lives in an App Group container both targets can reach.
+  ShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ShareExtension
+      # Only what the extension actually needs. Permissions, Importers, LookMode and the panels are
+      # deliberately excluded: they reach UIApplication.shared and heavy frameworks an extension
+      # neither may use nor needs.
+      - path: Sources/SlyOSCompanion/SlyTheme.swift
+      - path: Sources/SlyOSCompanion/SlyStore.swift
+      - path: Sources/SlyOSCompanion/SharedContainer.swift
+      - path: Sources/SlyOSCompanion/Keychain.swift
+      - path: Sources/SlyOSCompanion/ModelRouter.swift
+      - path: Sources/SlyOSCompanion/AgentClient.swift
+      - path: Sources/SlyOSCompanion/SlySettings.swift
+      - path: Sources/SlyOSCompanion/SlyProfile.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.belto.slyos.ios.share
+        # Distinct from the app's: two targets producing a module called SlyOS collide on the
+        # .swiftmodule outputs. The display name below is what the user actually sees.
+        PRODUCT_NAME: SlyOSShare
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: SlyOS
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_ENTITLEMENTS: ShareExtension/ShareExtension.entitlements
+    info:
+      path: ShareExtension/Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
