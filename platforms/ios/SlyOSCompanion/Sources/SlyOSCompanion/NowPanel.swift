@@ -186,6 +186,138 @@ final class NowFeed {
     }
 }
 
+
+/// Recording the room, and what happens to it afterwards.
+///
+/// A live transcript on screen rather than a waveform: a waveform proves the microphone is on, and
+/// a transcript proves it is *hearing you* — which is the thing you actually want to know sixty
+/// seconds into a meeting you cannot repeat.
+struct MeetingSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.palette) private var p
+    @State private var notes = MeetingNotes.shared
+    @State private var title = ""
+    @State private var saving = false
+    @State private var saved: String?
+    @State private var tick = Date.now
+
+    private let clock = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: T.md) {
+                if let saved {
+                    done(saved)
+                } else {
+                    header
+                    live
+                    controls
+                }
+            }
+            .padding(T.md)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(p.bg.ignoresSafeArea())
+            .navigationTitle("Take notes")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(notes.isRecording ? "Discard" : "Close") {
+                        notes.stop(); notes.discard(); dismiss()
+                    }.tint(p.accent)
+                }
+            }
+            .onReceive(clock) { tick = $0 }
+        }
+        .preferredColorScheme(nil)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: T.xs) {
+            TextField("", text: $title, prompt:
+                Text("what is this? (optional)").foregroundStyle(p.inkFaint))
+                .font(.system(size: T.prompt - 6)).foregroundStyle(p.ink)
+                .textFieldStyle(.plain)
+            Rectangle().fill(p.hairline).frame(height: 1)
+            Text("Heard and written on this phone. Nothing is uploaded unless you save, and then "
+                 + "only the text.")
+                .font(.system(size: T.caption)).foregroundStyle(p.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var live: some View {
+        ScrollView {
+            Text(notes.transcript.isEmpty
+                 ? (notes.isRecording ? "Listening…" : "Tap record and put the phone on the table.")
+                 : notes.transcript)
+                .font(.system(size: T.body))
+                .foregroundStyle(notes.transcript.isEmpty ? p.inkFaint : p.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        }
+        .scrollIndicators(.hidden)
+        .frame(maxHeight: .infinity)
+    }
+
+    private var controls: some View {
+        VStack(spacing: T.sm) {
+            if let problem = notes.problem {
+                Text(problem).font(.system(size: T.caption)).foregroundStyle(p.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: T.md) {
+                Button {
+                    Task {
+                        if notes.isRecording { notes.stop() } else { await notes.start() }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Circle().fill(notes.isRecording ? p.danger : p.accent).frame(width: 12, height: 12)
+                        Text(notes.isRecording ? "Stop · \(notes.elapsed)" : "Record")
+                            .font(.system(size: T.body, weight: .medium))
+                    }
+                    .foregroundStyle(p.ink)
+                    .frame(maxWidth: .infinity).padding(.vertical, 14)
+                    .background(Capsule().fill(p.bgElevated))
+                }
+
+                if !notes.transcript.isEmpty && !notes.isRecording {
+                    Button {
+                        Task {
+                            saving = true
+                            saved = await notes.save(title: title) ?? "too short to keep"
+                            saving = false
+                        }
+                    } label: {
+                        Text(saving ? "Saving…" : "Save")
+                            .font(.system(size: T.body, weight: .medium)).foregroundStyle(.white)
+                            .padding(.horizontal, T.lg).padding(.vertical, 14)
+                            .background(Capsule().fill(p.accent))
+                    }
+                    .disabled(saving)
+                }
+            }
+        }
+    }
+
+    private func done(_ name: String) -> some View {
+        VStack(alignment: .leading, spacing: T.md) {
+            Text("Saved").font(.system(size: T.prompt)).foregroundStyle(p.ink)
+            Text("**\(name)** is in your brain — the whole transcript, plus a summary with the "
+                 + "decisions and who owes what. Anything you agreed to is on your list.")
+                .font(.system(size: T.body)).foregroundStyle(p.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Ask about it whenever: \"what did we decide about the timeline?\"")
+                .font(.system(size: T.caption)).foregroundStyle(p.inkFaint)
+            Spacer()
+            Button("Done") { notes.discard(); dismiss() }
+                .font(.system(size: T.body)).foregroundStyle(.white)
+                .frame(maxWidth: .infinity).padding(.vertical, 14)
+                .background(Capsule().fill(p.accent))
+        }
+    }
+}
+
 struct NowPanel: View {
     @Environment(\.palette) private var p
     @State private var feed = NowFeed()

@@ -75,6 +75,7 @@ struct HomePanel: View {
     @State private var voice = VoiceInput.shared
     @State private var showScanner = false
     @State private var showLook = false
+    @State private var showMeeting = false
     @State private var showPhotoPicker = false
     @State private var showFilePicker = false
     @State private var pickedPhoto: PhotosPickerItem?
@@ -96,6 +97,7 @@ struct HomePanel: View {
             if voice.isListening { prompt = heard }
         }
         .fullScreenCover(isPresented: $showLook) { LookScreen() }
+        .sheet(isPresented: $showMeeting) { MeetingSheet() }
         .sheet(isPresented: $showScanner) {
             DocumentScanner { pages in
                 Task { await readPages(pages) }
@@ -216,6 +218,11 @@ struct HomePanel: View {
                 Image(systemName: "camera.fill").font(.system(size: 22)).foregroundStyle(p.inkSoft)
             }
             .accessibilityLabel("Look with the camera")
+
+            Button { showMeeting = true } label: {
+                Image(systemName: "waveform").font(.system(size: 22)).foregroundStyle(p.inkSoft)
+            }
+            .accessibilityLabel("Take notes on a conversation")
 
             Button(action: send) {
                 Text("Send")
@@ -366,6 +373,17 @@ struct HomePanel: View {
 
         Task {
             do {
+                // Asked for out loud rather than found as an icon — "take notes on this meeting"
+                // should open the recorder, not be answered with a description of note-taking.
+                let asking = asked.lowercased()
+                if ["take notes", "record this", "record the", "note this meeting",
+                    "transcribe"].contains(where: asking.contains) {
+                    thinking = false
+                    showMeeting = true
+                    answer = "Recording — put the phone where it can hear the room."
+                    return
+                }
+
                 // "write me a proposal" should produce a document, not a description of one.
                 if let kind = MakeSomething.Kind.detect(in: asked), GoogleAuth.shared.isConnected {
                     let made = try await MakeSomething.make(kind, from: asked)
