@@ -39,6 +39,15 @@ enum GoogleWorkspace {
         "rgbColor": ["red": 232.0 / 255, "green": 100.0 / 255, "blue": 44.0 / 255]
     ]
 
+    /// The same colour in the shape the **Docs** API wants.
+    ///
+    /// Three Google APIs, three different wrappers for one colour. Docs expects an OptionalColor —
+    /// `foregroundColor: { color: { rgbColor: … } }`; Slides expects `{ opaqueColor: { rgbColor: … } }`;
+    /// Sheets takes the bare `rgbColor`. Passing the Slides shape to Docs produced
+    /// `Unknown name "rgbColor" at requests[1].update_text_style.text_style.foreground` and failed
+    /// the whole batch, so every document came back as a 400 and nothing was ever written.
+    private static let docAccent: [String: Any] = ["color": accent]
+
 
     // MARK: - Where everything lands
 
@@ -121,7 +130,7 @@ enum GoogleWorkspace {
                 requests.append(["updateTextStyle": [
                     "range": range,
                     "textStyle": ["bold": true, "fontSize": ["magnitude": 15, "unit": "PT"],
-                                  "foregroundColor": accent],
+                                  "foregroundColor": docAccent],
                     "fields": "bold,fontSize,foregroundColor"
                 ]])
             }

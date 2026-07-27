@@ -83,15 +83,24 @@ final class VectorStore {
     /// The whole table is scanned. That sounds wrong until you measure it: 100,000 int8 vectors is
     /// 150MB of sequential reads and a dot product per row, which is well under a second — and an
     /// approximate index would cost more in complexity than it saves at this size.
-    func nearest(to query: [Double], limit: Int = 40) -> [(id: Int64, score: Double)] {
+    /// Nearest by cosine — within one model's vectors only.
+    ///
+    /// `model` is not optional and the query is filtered on it, because vectors from two different
+    /// embedders are not comparable in any way: different dimensions, different geometry, different
+    /// meaning of the same coordinate. Scanning the table indiscriminately silently ranked
+    /// yesterday's Gemini vectors against today's on-device ones and returned confident nonsense —
+    /// which looks exactly like "semantic recall doesn't work" and is impossible to spot from the
+    /// outside, because every result comes back with a plausible score.
+    func nearest(to query: [Double], model: String, limit: Int = 40) -> [(id: Int64, score: Double)] {
         guard !query.isEmpty else { return [] }
         let normSquared = query.reduce(0) { $0 + $1 * $1 }
         guard normSquared > 0 else { return [] }
 
         return queue.sync {
             var st: OpaquePointer?
-            guard sqlite3_prepare_v2(db, "SELECT id, dim, q8 FROM vectors;", -1, &st, nil) == SQLITE_OK
+            guard sqlite3_prepare_v2(db, "SELECT id, dim, q8 FROM vectors WHERE model = ?;", -1, &st, nil) == SQLITE_OK
             else { return [] }
+            sqlite3_bind_text(st, 1, model, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
             defer { sqlite3_finalize(st) }
 
             var scored: [(Int64, Double)] = []
@@ -121,7 +130,9 @@ final class VectorStore {
     }
 
     /// How much of the brain has been embedded — the honest answer to "why didn't it find that?".
-    func coverage() -> (embedded: Int, total: Int) {
+    /// How much of the brain is embedded **with the model in use now**. Counting every row would
+    /// report a fully-embedded brain the moment the embedder changed, while recall found nothing.
+    func coverage(model: String? = nil) -> (embedded: Int, total: Int) {
         queue.sync {
             func count(_ sql: String) -> Int {
                 var st: OpaquePointer?
@@ -129,8 +140,10 @@ final class VectorStore {
                 defer { sqlite3_finalize(st) }
                 return sqlite3_step(st) == SQLITE_ROW ? Int(sqlite3_column_int64(st, 0)) : 0
             }
-            return (count("SELECT COUNT(*) FROM vectors;"),
-                    count("SELECT COUNT(*) FROM memories;"))
+            let embedded = model.map {
+                count("SELECT COUNT(*) FROM vectors WHERE model = '\($0.replacingOccurrences(of: "'", with: "''"))';")
+            } ?? count("SELECT COUNT(*) FROM vectors;")
+            return (embedded, count("SELECT COUNT(*) FROM memories;"))
         }
     }
 

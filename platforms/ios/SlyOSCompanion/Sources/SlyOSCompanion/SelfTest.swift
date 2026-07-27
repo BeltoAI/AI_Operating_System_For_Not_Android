@@ -96,16 +96,17 @@ final class SelfTest {
 
         await record("Brain", "Semantic recall") {
             guard Embedder.isConfigured else {
-                return (.skip, "no embedding provider — Gemini's free tier covers this")
+                return (.skip, "no embedder available yet — the on-device model is still downloading")
             }
-            let (indexed, total) = VectorStore.shared.coverage()
+            let provider = Embedder.available
+            let (indexed, total) = VectorStore.shared.coverage(model: provider?.model)
             guard indexed > 0 else {
                 return (.fail, "nothing embedded yet — recall is keyword-only until this runs")
             }
-            guard let vector = await Embedder.embedQuery("what do I need to do") else {
-                return (.fail, "the embedding provider did not return a vector")
+            guard let provider, let vector = await Embedder.embedQuery("what do I need to do") else {
+                return (.fail, "the embedder did not return a vector")
             }
-            let near = VectorStore.shared.nearest(to: vector, limit: 3)
+            let near = VectorStore.shared.nearest(to: vector, model: provider.model, limit: 3)
             return near.isEmpty
                 ? (.fail, "\(indexed.formatted()) vectors indexed but the search matched none")
                 : (.pass, "\(indexed.formatted()) vectors · nearest \(near.count)")

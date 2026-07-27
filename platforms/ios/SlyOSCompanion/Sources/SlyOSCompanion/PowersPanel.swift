@@ -1,65 +1,47 @@
 import SwiftUI
 
-/// Powers — the store, matching Compose `StoreScreen`.
+/// What SlyOS is worth to you, in numbers it can prove.
 ///
-/// Same anatomy as Android: a wish box, category pills, a featured card, then a grid of powers each
-/// carrying a rating and a plain statement of what it needs. The difference is the catalogue. Every
-/// power here is something an iPhone can genuinely do, and the ones that need a gateway or an
-/// account say so on the card rather than after you tap Get.
+/// This was a storefront: a grid of cards with invented star ratings for features that could not be
+/// bought, installed or tapped. It promised a shop and delivered a poster — and a fake rating is a
+/// bad thing to show someone deciding whether to trust the app with their inbox.
+///
+/// Every figure here is counted at the moment it is drawn: rows in the brain, entries in the action
+/// log, money summed from receipts. Nothing is estimated, nothing is cached, so nothing can drift
+/// out of date or be quietly wrong.
+///
+/// The argument it makes is the product's whole argument: an assistant that starts from zero every
+/// time is worth nothing, and this one holds *this much* of you and did *these things* — stated as
+/// evidence rather than as a claim.
 struct PowersPanel: View {
     @Environment(\.palette) private var p
 
     @State private var permissions = Permissions.shared
     @State private var router = ModelRouter.shared
-    @State private var wish = ""
-    @State private var category: Category = .forYou
-    @State private var brainCount = 0
-    @State private var googleConnected = false
-    @State private var clawConnected = false
 
-    enum Category: String, CaseIterable, Identifiable {
-        case forYou = "For you", see = "See", speak = "Speak", create = "Create", know = "Know"
-        var id: String { rawValue }
-    }
-
-    struct Power: Identifiable {
-        let id: String
-        let title: String
-        let rating: Double
-        let category: Category
-        let glyph: String
-        let tint: Color
-        /// What it needs. Empty means it works right now.
-        let needs: String
-        /// The one thing that would switch it on.
-        ///
-        /// Without this the store was decorative: a grid of cards saying "needs your calendar"
-        /// with no way to give it one. Naming the requirement and then offering no route to it is
-        /// worse than not listing the power at all — it reads as a shop that will not sell you
-        /// anything.
-        var fix: Fix = .none
-        var ready: Bool { needs.isEmpty }
-    }
-
-    enum Fix: Equatable {
-        case none
-        case permission(Permissions.Capability)
-        case settings          // open SlyOS settings — a key, Google, a token
-        case importSomething   // the brain is empty
-    }
+    @State private var brainTotal = 0
+    @State private var bySource: [(String, Int)] = []
+    @State private var addedThisWeek = 0
+    @State private var embedded = 0
+    @State private var actions: [(String, Int)] = []
+    @State private var devices: [String] = []
+    @State private var facts = 0
+    @State private var photos = 0
+    @State private var drafts = 0
+    @State private var receipts = 0
+    @State private var spend = ""
+    @State private var loading = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            wishBox
-            categoryRow
-
             ScrollView {
                 VStack(alignment: .leading, spacing: T.lg) {
-                    if let featured { FeaturedCard(power: featured, palette: p) }
-                    grid("WORKS ON YOUR PHONE NOW", powers.filter { $0.ready && matches($0) })
-                    grid("TAP TO SWITCH ON", powers.filter { !$0.ready && matches($0) })
-                    notPossible
+                    headline
+                    if brainTotal > 0 { knows }
+                    if !actions.isEmpty { did }
+                    if devices.count > 1 { across }
+                    switchOn
                 }
                 .padding(.top, T.md)
                 .padding(.bottom, T.lg)
@@ -67,277 +49,310 @@ struct PowersPanel: View {
             .scrollIndicators(.hidden)
         }
         .padding(.horizontal, T.md)
-        .task { refresh() }
+        .task { await refresh() }
     }
 
     // MARK: - Chrome
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Heading("Powers")
-                Spacer()
-                Button("reset") { wish = ""; category = .forYou }
-                    .font(.system(size: T.body)).foregroundStyle(p.accent)
-            }
-            Text("\(powers.filter(\.ready).count) working")
-                .font(.system(size: T.small)).foregroundStyle(p.accent)
-        }
-        .padding(.top, T.md)
-    }
-
-    /// The wish box. Android lets you describe a power you want; here it searches the catalogue and
-    /// says plainly when nothing matches, rather than pretending to build it.
-    private var wishBox: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("give your phone the power to —")
-                .font(.system(size: T.small)).foregroundStyle(p.accent)
-            TextField("", text: $wish, prompt:
-                Text("speak in my voice…").foregroundStyle(p.inkFaint))
-                .font(.system(size: T.prompt - 4))
+            Text("your brain")
+                .font(.custom(T.scriptFamily, size: 40))
                 .foregroundStyle(p.ink)
-                .textFieldStyle(.plain)
+            Text(loading ? "counting…" : "counted just now — none of this is estimated")
+                .font(.system(size: T.small)).foregroundStyle(p.inkFaint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 16).fill(p.bgElevated))
         .padding(.top, T.md)
     }
 
-    private var categoryRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(Category.allCases) { c in
-                    let on = category == c
-                    Button { category = c } label: {
-                        Text(c.rawValue)
-                            .font(.system(size: T.body))
-                            .foregroundStyle(on ? .white : p.ink)
-                            .padding(.horizontal, 20).padding(.vertical, 10)
-                            .background(Capsule().fill(on ? p.accent : p.bgElevated))
+    /// The one number that is the product.
+    private var headline: some View {
+        VStack(alignment: .leading, spacing: T.xs) {
+            Text(brainTotal.formatted())
+                .font(.system(size: 56, weight: .light))
+                .foregroundStyle(p.accent)
+            Text(brainTotal == 0
+                 ? "things remembered — import a chat export or read a document in, and this is where it shows"
+                 : "things it remembers about you")
+                .font(.system(size: T.body)).foregroundStyle(p.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+            if addedThisWeek > 0 {
+                Text("+\(addedThisWeek.formatted()) this week")
+                    .font(.system(size: T.small)).foregroundStyle(p.good)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(RoundedRectangle(cornerRadius: 18).fill(p.bgElevated))
+    }
+
+    // MARK: - Sections
+
+    private var knows: some View {
+        card("WHAT IT KNOWS") {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(bySource.prefix(6), id: \.0) { name, n in
+                    bar(name, n, of: bySource.first?.1 ?? 1)
+                }
+                if embedded > 0 || facts > 0 || photos > 0 || receipts > 0 {
+                    Divider().overlay(p.hairline).padding(.vertical, 2)
+                }
+                if embedded > 0 {
+                    stat("searchable by meaning",
+                         "\(Int(Double(embedded) / Double(max(brainTotal, 1)) * 100))%",
+                         detail: "the rest is still findable by keyword")
+                }
+                if facts > 0 {
+                    stat("things it worked out about you", "\(facts)",
+                         detail: "distilled from your history, not typed in")
+                }
+                if photos > 0 {
+                    stat("photos read", photos.formatted(), detail: "on this phone — none uploaded")
+                }
+                if receipts > 0 {
+                    stat("receipts tracked", spend.isEmpty ? "\(receipts)" : spend,
+                         detail: "\(receipts) scanned this month")
+                }
+            }
+        }
+    }
+
+    private var did: some View {
+        card("WHAT IT DID FOR YOU") {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(actions, id: \.0) { verb, n in
+                    HStack {
+                        Text(verb.capitalized)
+                            .font(.system(size: T.body)).foregroundStyle(p.ink)
+                        Spacer()
+                        Text("\(n)")
+                            .font(.system(size: T.body, weight: .medium)).foregroundStyle(p.accent)
+                    }
+                }
+                if drafts > 0 {
+                    Divider().overlay(p.hairline).padding(.vertical, 2)
+                    stat("replies written in your voice", "\(drafts)",
+                         detail: "each one you didn't start from nothing")
+                }
+            }
+        }
+    }
+
+    /// Only once a second device has written to the brain — "1 device" is a statistic about nothing.
+    private var across: some View {
+        card("ONE BRAIN, \(devices.count) DEVICES") {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(devices, id: \.self) { d in
+                    HStack(spacing: 8) {
+                        Image(systemName: "iphone").font(.system(size: 12)).foregroundStyle(p.accent)
+                        Text(d).font(.system(size: T.body)).foregroundStyle(p.ink)
+                        Spacer()
+                        Text("\(Activity.recent(limit: 500, on: d).count)")
+                            .font(.system(size: T.small)).foregroundStyle(p.inkFaint)
+                    }
+                }
+                Text("Ask about any of them from any of them — \"what did I do on my Samsung "
+                     + "yesterday?\"")
+                    .font(.system(size: T.caption)).foregroundStyle(p.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var switchOn: some View {
+        let off = pending
+        return Group {
+            if off.isEmpty {
+                card("EVERYTHING IS ON") {
+                    Text("Every part of SlyOS this phone can run is running.")
+                        .font(.system(size: T.small)).foregroundStyle(p.inkSoft)
+                }
+            } else {
+                card("SWITCH ON") {
+                    VStack(spacing: 12) {
+                        ForEach(off, id: \.title) { SwitchOnRow(item: $0, palette: p) }
                     }
                 }
             }
-            .padding(.vertical, 2)
-        }
-        .padding(.top, T.md)
-    }
-
-    private func matches(_ power: Power) -> Bool {
-        let inCategory = category == .forYou || power.category == category
-        let inSearch = wish.isEmpty || power.title.localizedCaseInsensitiveContains(wish)
-        return inCategory && inSearch
-    }
-
-    private var featured: Power? {
-        // Whatever is most worth turning on next: the first thing that isn't ready yet.
-        powers.first { !$0.ready } ?? powers.first
-    }
-
-    private func grid(_ label: String, _ list: [Power]) -> some View {
-        Group {
-            if !list.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    SectionHeader(label)
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
-                                        GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                        ForEach(list) { power in
-                            PowerCard(power: power, palette: p)
-                        }
-                    }
-                }
-            }
         }
     }
 
-    /// Stated outright, as on the rest of the app. Someone comparing the two phones deserves to
-    /// know before they buy, not after.
-    private var notPossible: some View {
+    // MARK: - Pieces
+
+    @ViewBuilder
+    private func card<Content: View>(_ label: String,
+                                     @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: T.sm) {
-            SectionHeader("NOT POSSIBLE ON IPHONE")
-            Text("Apple does not let any app replace your home screen, read other apps' "
-                 + "notifications, or operate your phone for you. The Android build does all three. "
-                 + "No power here unlocks them, and none pretends to.")
-                .font(.system(size: T.caption)).foregroundStyle(p.inkFaint)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(label)
+                .font(.system(size: T.small, weight: .bold)).tracking(2)
+                .foregroundStyle(p.inkFaint)
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .background(RoundedRectangle(cornerRadius: 18).fill(p.bgElevated))
         }
     }
 
-    // MARK: - Catalogue
-
-    private var powers: [Power] {
-        [
-            Power(id: "recall", title: "answer from everything you've ever been told",
-                  rating: 4.9, category: .know, glyph: "R", tint: .hex(0xE8642C),
-                  needs: brainCount > 0 ? "" : "import something first",
-                  fix: .importSomething),
-
-            Power(id: "voice", title: "answer as you, not as a chatbot",
-                  rating: 4.8, category: .speak, glyph: "V", tint: .hex(0x8A6DBE),
-                  needs: router.isConfigured ? "" : "an AI key — several are free",
-                  fix: .settings),
-
-            Power(id: "look", title: "read anything you point at",
-                  rating: 4.8, category: .see, glyph: "L", tint: .hex(0xC85A7C),
-                  needs: permissions.state(.camera) == .granted ? "" : "the camera",
-                  fix: .permission(.camera)),
-
-            Power(id: "talk", title: "talk to it instead of typing",
-                  rating: 4.6, category: .speak, glyph: "T", tint: .hex(0xE39A3C),
-                  needs: permissions.state(.microphone) == .granted
-                      && permissions.state(.speech) == .granted ? "" : "the microphone",
-                  fix: .permission(.microphone)),
-
-            Power(id: "agenda", title: "know what's on before you ask",
-                  rating: 4.7, category: .know, glyph: "N", tint: .hex(0x4285F4),
-                  needs: permissions.state(.calendar) == .granted ? "" : "your calendar",
-                  fix: .permission(.calendar)),
-
-            Power(id: "meet", title: "put real Meet links in invites people actually get",
-                  rating: 4.9, category: .create, glyph: "G", tint: .hex(0x1D8F63),
-                  needs: googleConnected ? "" : "Google connected",
-                  fix: .settings),
-
-            Power(id: "reply", title: "draft a reply in your voice, anywhere",
-                  rating: 4.7, category: .speak, glyph: "D", tint: .hex(0xB0468C),
-                  needs: router.isConfigured ? "" : "an AI key",
-                  fix: .settings),
-
-            Power(id: "paper", title: "research a topic properly while you do something else",
-                  rating: 4.7, category: .create, glyph: "P", tint: .hex(0x6E5AA8),
-                  needs: router.isConfigured ? "" : "an AI key",
-                  fix: .settings),
-
-            Power(id: "backup", title: "keep your whole brain in your own Drive",
-                  rating: 4.5, category: .know, glyph: "B", tint: .hex(0x5DCAA5),
-                  needs: googleConnected ? "" : "Google connected",
-                  fix: .settings),
-
-            Power(id: "claw", title: "read your WhatsApp and Telegram",
-                  rating: 4.4, category: .know, glyph: "W", tint: .hex(0x1FA855),
-                  needs: clawConnected ? "" : "an OpenClaw gateway you run",
-                  fix: .settings)
-        ]
-    }
-
-    private func refresh() {
-        permissions.refresh()
-        brainCount = SlyStore.shared.count()
-        googleConnected = GoogleAuth.shared.isConnected
-        clawConnected = OpenClaw.shared.isConfigured
-    }
-}
-
-/// The big card at the top — a coloured slab, as on Android.
-private struct FeaturedCard: View {
-    let power: PowersPanel.Power
-    let palette: Palette
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("FEATURED")
-                .font(.system(size: 11, weight: .bold)).tracking(2)
-                .foregroundStyle(.white.opacity(0.75))
-
-            Text(power.title)
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(.white)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 14)
-
+    private func bar(_ name: String, _ n: Int, of top: Int) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Text("★ \(power.rating, specifier: "%.1f") · \(power.needs.isEmpty ? "works now" : "needs \(power.needs)")")
-                    .font(.system(size: T.small)).foregroundStyle(.white.opacity(0.85))
+                Text(name).font(.system(size: T.small)).foregroundStyle(p.ink).lineLimit(1)
                 Spacer()
-                Text(power.ready ? "ON" : "GET")
-                    .font(.system(size: T.small, weight: .bold))
-                    .foregroundStyle(power.tint)
-                    .padding(.horizontal, 22).padding(.vertical, 11)
-                    .background(Capsule().fill(.white))
+                Text(n.formatted()).font(.system(size: T.small)).foregroundStyle(p.inkFaint)
             }
-            .padding(.top, 18)
+            GeometryReader { geo in
+                RoundedRectangle(cornerRadius: 3).fill(p.accent.opacity(0.55))
+                    .frame(width: max(3, geo.size.width * CGFloat(n) / CGFloat(max(top, 1))))
+            }
+            .frame(height: 5)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(22)
-        .background(
-            RoundedRectangle(cornerRadius: 22)
-                .fill(LinearGradient(colors: [power.tint, power.tint.mix(with: .black, by: 0.28)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-        )
+    }
+
+    private func stat(_ label: String, _ value: String, detail: String) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label).font(.system(size: T.small)).foregroundStyle(p.ink)
+                Text(detail).font(.system(size: T.caption)).foregroundStyle(p.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.system(size: T.small, weight: .medium)).foregroundStyle(p.accent).fixedSize()
+        }
+    }
+
+    // MARK: - What is off
+
+    struct Pending {
+        let title: String
+        let why: String
+        let fix: Fix
+    }
+
+    enum Fix: Equatable {
+        case permission(Permissions.Capability)
+        case settings
+    }
+
+    private var pending: [Pending] {
+        var out: [Pending] = []
+        if !router.isConfigured {
+            out.append(.init(title: "Add an AI key",
+                             why: "nothing that needs a model can answer without one — Groq and Mistral are free",
+                             fix: .settings))
+        }
+        if brainTotal == 0 {
+            out.append(.init(title: "Feed it something",
+                             why: "a WhatsApp or Instagram export, or a PDF — this is the whole product",
+                             fix: .settings))
+        }
+        if permissions.state(.calendar) != .granted {
+            out.append(.init(title: "Your calendar", why: "so it knows what's on before you ask",
+                             fix: .permission(.calendar)))
+        }
+        if permissions.state(.camera) != .granted {
+            out.append(.init(title: "The camera",
+                             why: "read receipts and documents — works with no key at all",
+                             fix: .permission(.camera)))
+        }
+        if permissions.state(.microphone) != .granted {
+            out.append(.init(title: "The microphone", why: "talk to it, and take notes in a meeting",
+                             fix: .permission(.microphone)))
+        }
+        if permissions.state(.reminders) != .granted {
+            out.append(.init(title: "Reminders", why: "so a task you give it actually goes off",
+                             fix: .permission(.reminders)))
+        }
+        if !GoogleAuth.shared.isConnected {
+            out.append(.init(title: "Connect Google",
+                             why: "mail drafts, real invitations with Meet links, documents, backup",
+                             fix: .settings))
+        }
+        return out
+    }
+
+    // MARK: - Counting
+
+    private func refresh() async {
+        let store = SlyStore.shared
+        brainTotal = store.count()
+        // The self-test writes rows of its own; counting them as memories would flatter the number.
+        bySource = store.countsBySource().filter { $0.0 != "SelfTest" }
+        addedThisWeek = store.between(Date.now.addingTimeInterval(-7 * 86_400), .now,
+                                      limit: 5_000).count
+        embedded = VectorStore.shared.coverage(model: Embedder.available?.model).embedded
+
+        // Counted by the verb the log line was written with, so the tally can never disagree with
+        // what the row actually says.
+        var counts: [String: Int] = [:]
+        for row in Activity.recent(limit: 1_000) {
+            for kind in ["created", "sent", "scanned", "imported", "saved", "scheduled", "asked"]
+            where row.body.hasPrefix("You \(kind) ") {
+                counts[kind, default: 0] += 1
+            }
+        }
+        actions = counts.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
+        devices = Activity.devices()
+
+        facts = Distiller.facts.count
+        photos = PhotoIndex.count
+        drafts = DraftLog.shared.entries.count
+
+        let ledger = Expenses.shared
+        ledger.load()
+        let month = Calendar.current.date(from:
+            Calendar.current.dateComponents([.year, .month], from: .now)) ?? .now
+        let (total, currency, _) = ledger.total(from: month,
+                                                to: Calendar.current.date(byAdding: .month, value: 1,
+                                                                          to: month) ?? .now)
+        receipts = ledger.entries.filter { $0.date >= month }.count
+        if total > 0 {
+            let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = currency
+            spend = f.string(from: NSNumber(value: total)) ?? ""
+        }
+        loading = false
     }
 }
 
-/// One power in the grid: a coloured glyph tile, the claim, then the rating and what it needs.
-private struct PowerCard: View {
-    let power: PowersPanel.Power
+/// One thing that is off, and the tap that turns it on.
+private struct SwitchOnRow: View {
+    let item: PowersPanel.Pending
     let palette: Palette
-    @State private var asking = false
     @State private var showSettings = false
 
     var body: some View {
         Button {
-            guard !power.ready else { return }
-            switch power.fix {
+            switch item.fix {
             case .permission(let capability):
-                asking = true
                 Task {
                     await Permissions.shared.request(capability)
-                    // Already refused once: iOS never asks again, so the only route left is the
-                    // Settings app. Sending them there is the difference between a dead card and
-                    // a working one.
+                    // Refused once already: iOS never asks a second time, so the only route left is
+                    // the Settings app. Without this the row is a button that does nothing.
                     if Permissions.shared.state(capability) != .granted {
                         Permissions.shared.openSettings()
                     }
-                    asking = false
                 }
-            case .settings, .importSomething:
+            case .settings:
                 showSettings = true
-            case .none:
-                break
             }
         } label: {
-            card
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title)
+                        .font(.system(size: T.body, weight: .medium)).foregroundStyle(palette.ink)
+                    Text(item.why)
+                        .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "arrow.right.circle.fill")
+                    .font(.system(size: 18)).foregroundStyle(palette.accent)
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(power.ready)
         .sheet(isPresented: $showSettings) { SettingsPanel() }
-    }
-
-    private var card: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            RoundedRectangle(cornerRadius: 16)
-                .fill(power.tint)
-                .frame(width: 62, height: 62)
-                .overlay(
-                    Text(power.glyph)
-                        .font(.custom(T.scriptFamily, size: 30))
-                        .foregroundStyle(.white)
-                )
-
-            Text(power.title)
-                .font(.system(size: T.body, weight: .medium))
-                .foregroundStyle(palette.ink)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 14)
-
-            Spacer(minLength: 12)
-
-            // What it needs, and — when it isn't ready — that tapping does something about it.
-            HStack(spacing: 4) {
-                if !power.ready && power.fix != .none {
-                    Image(systemName: asking ? "hourglass" : "arrow.right.circle.fill")
-                        .font(.system(size: 11)).foregroundStyle(palette.accent)
-                }
-                Text(power.ready
-                     ? "★ \(String(format: "%.1f", power.rating))  ·  works on your phone"
-                     : "tap to add \(power.needs)")
-                    .font(.system(size: T.caption))
-                    .foregroundStyle(power.ready ? palette.accent : palette.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .frame(maxWidth: .infinity, minHeight: 210, alignment: .topLeading)
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 18).fill(palette.bgElevated))
     }
 }

@@ -190,9 +190,46 @@ enum ActionRouter {
     }
 
     private static func person(in prompt: String) -> String {
-        if let m = prompt.firstMatch(#"(?i)\b(?:to|message|text|tell)\s+([A-Z][\w'-]+)"#) { return m[1] }
-        if let m = prompt.firstMatch(#"\b([A-Z][a-z]{2,})\b"#) { return m[1] }
+        if let m = prompt.firstMatch(#"(?i)\b(?:to|message|text|tell)\s+([A-Z][\w'-]+)"#),
+           !isCommandWord(m[1]) { return m[1] }
+
+        // Any capitalised word — but not the verb the sentence opens with. "Email her I love her"
+        // capitalises "Email", and taking that as the recipient produced the flatly contradictory
+        // "I don't have an email address for Email. Here's the draft: To: joslyn@…".
+        if let m = prompt.firstMatch(#"\b([A-Z][a-z]{2,})\b"#), !isCommandWord(m[1]) {
+            return m[1]
+        }
+
+        // "email her", "text him" — a pronoun means the person the conversation is already about.
+        // Without this, the commonest way anyone phrases a follow-up resolves to nobody.
+        let p = prompt.lowercased()
+        if ["her", "him", "them", "they"].contains(where: { p.contains(" \($0) ") || p.hasSuffix(" \($0)") }) {
+            if let recent = recentPerson() { return recent }
+        }
         return ""
+    }
+
+    /// Words that open a sentence and are never a name.
+    private static func isCommandWord(_ word: String) -> Bool {
+        [
+            "email", "mail", "send", "message", "text", "tell", "write", "reply", "draft",
+            "create", "make", "build", "block", "add", "set", "remind", "schedule", "book",
+            "invite", "google", "meet", "calendar", "gmail", "whatsapp", "telegram", "instagram",
+            "slyos", "please", "hey", "can", "could", "would", "what", "when", "where", "who",
+            "today", "tomorrow", "tonight", "monday", "tuesday", "wednesday", "thursday",
+            "friday", "saturday", "sunday"
+        ].contains(word.lowercased())
+    }
+
+    /// The last person the conversation named, for resolving a pronoun.
+    private static func recentPerson() -> String? {
+        for turn in HomeChat.context(6).reversed() {
+            for word in turn.text.components(separatedBy: CharacterSet.alphanumerics.inverted)
+            where word.count > 2 && word.first?.isUppercase == true && !isCommandWord(word) {
+                return word
+            }
+        }
+        return nil
     }
 
     struct Outcome {
@@ -280,7 +317,12 @@ enum ActionRouter {
                                + "the event and send the invite.", didSomething: false)
             }
             // "Block my calendar" is for the owner alone — inviting someone to it would be absurd.
-            let blocker = ["block", "busy", "hold "].contains { intent.instruction.lowercased().contains($0) }
+            let said = intent.instruction.lowercased()
+            let blocker = ["block", "busy", "hold "].contains { said.contains($0) }
+            // Asked for outright, in any of the ways people say it.
+            let wantsMeet = ["google meet", "meet link", "video call", "hangout", "zoom",
+                             "a meet", "with meet", "include a meet", "call link"]
+                .contains { said.contains($0) }
             let guests = (blocker || intent.recipient.isEmpty)
                 ? []
                 : [await lookUpEmail(for: intent.recipient)].compactMap { $0 }
@@ -289,8 +331,13 @@ enum ActionRouter {
                     title: title(from: intent.instruction),
                     start: slot.start, end: slot.end,
                     attendees: guests,
-                    // No Meet link on time you are holding for yourself — nobody is joining it.
-                    withMeet: !blocker && !guests.isEmpty)
+                    // A Meet link when there are guests — or whenever one was actually asked for.
+                    //
+                    // The condition used to be guests-only, so "block my calendar until 12:30" then
+                    // "include a Google Meet" created the event and silently ignored the Meet. A
+                    // solo event with a room is a perfectly ordinary thing to want: you make the
+                    // link first and send it to someone after.
+                    withMeet: wantsMeet || (!blocker && !guests.isEmpty))
 
                 let who = guests.isEmpty ? "nobody else" : guests.joined(separator: ", ")
                 Activity.record(.scheduled, event.title,
@@ -370,16 +417,24 @@ enum ActionRouter {
     /// It corrects rather than hides. Deleting the model's text would lose the draft it wrote.
     static func correctIfItClaimed(_ answer: String) -> String {
         let a = answer.lowercased()
-        let claims = ["i'll send", "i will send", "sending ", "i've sent", "i have sent", "sent it",
-                      "creating ", "i'll create", "i've created", "i'll add", "adding it",
-                      "inviting ", "i'll invite", "i've invited", "scheduling ", "i'll schedule",
-                      "booking ", "done —", "done."]
+        // COMPLETION claims only — things stated as already having happened.
+        //
+        // This used to fire on "creating ", "sending ", "inviting " too, which was a bug of our own
+        // making: the capability prompt explicitly instructs the model to say what it is *about to*
+        // do, so a perfectly good answer earned a "Nothing was actually done" banner on top of
+        // itself. Every reply looked broken, and the one warning that should mean something became
+        // noise people learn to scroll past — which is exactly how a real false claim gets missed.
+        let claims = ["i've sent", "i have sent", "sent it", "i sent ", "email sent",
+                      "i've created", "i have created", "i created ", "created it",
+                      "i've added", "i have added", "i've invited", "i have invited",
+                      "i've scheduled", "i have scheduled", "i've booked",
+                      "done —", "done!", "all set", "that's done", "it's done"]
         guard claims.contains(where: a.contains) else { return answer }
 
         return """
-            **Nothing was actually done.** What follows is only a draft — nothing was sent, created
-            or scheduled. If you meant it as an instruction, say it again more plainly — for example
-            "block my calendar 6pm to 6:30pm today" — and I'll do it for real.
+            **Nothing was actually sent or created.** The reply below says otherwise, but this was
+            an answer, not an action. Ask plainly — "block my calendar 6pm to 6:30pm today", "email
+            Joslyn about dinner" — and it happens for real.
 
             \(answer)
             """

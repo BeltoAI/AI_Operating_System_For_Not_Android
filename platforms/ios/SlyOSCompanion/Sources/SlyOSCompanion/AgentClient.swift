@@ -442,8 +442,10 @@ enum AgentClient {
         let keyword = store.search(question, limit: 40)
 
         var semantic: [Memory] = []
-        if Embedder.isConfigured, let vector = await Embedder.embedQuery(question) {
-            let near = VectorStore.shared.nearest(to: vector, limit: 40)
+        // Searched within one embedder's vectors — mixing two models compares incomparable
+        // geometry and returns confident nonsense.
+        if let provider = Embedder.available, let vector = await Embedder.embedQuery(question) {
+            let near = VectorStore.shared.nearest(to: vector, model: provider.model, limit: 40)
             semantic = store.byIDs(near.map(\.id))
         }
 
