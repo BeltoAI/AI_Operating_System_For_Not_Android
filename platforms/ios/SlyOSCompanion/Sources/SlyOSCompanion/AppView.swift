@@ -252,14 +252,13 @@ struct HomePanel: View {
                         .font(.system(size: T.body)).foregroundStyle(p.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    // A ScrollView always claims its maximum height, so wrapping every answer in
-                    // one made a single line 420pt tall. Measure the content and only scroll when
-                    // it genuinely overflows.
+                    // A ScrollView always claims its maximum height, and so does a maxHeight frame:
+                    // both make a two-line answer 420pt tall. Neither is applied unless the content
+                    // genuinely overflows — see ScrollIfNeeded.
                     AnswerView(text: answer)
                         .background(GeometryReader { geo in
                             Color.clear.preference(key: ContentHeight.self, value: geo.size.height)
                         })
-                        .frame(maxHeight: 420, alignment: .top)
                         .modifier(ScrollIfNeeded(height: answerHeight, cap: 420))
                         .onPreferenceChange(ContentHeight.self) { answerHeight = $0 }
 
@@ -338,6 +337,26 @@ struct HomePanel: View {
                     return
                 }
 
+                // A request to send something goes through the action router, which either does it
+                // or says outright that it didn't. Before this, "send a message to Joslyn" produced
+                // the sentence "I'll send a message to Joslyn" and no message — the app lying.
+                if let intent = ActionRouter.detect(asked) {
+                    let draft = try await AgentClient.complete(
+                        system: """
+                            Write the message itself, as the owner, in their voice. Output only the \
+                            message — no preamble, no "here's your message", no commentary. \
+                            \(AgentClient.voiceBlock())
+                            """,
+                        user: "WHAT YOU KNOW:\n\(AgentClient.corpus(for: asked))\n\nWRITE: \(asked)",
+                        tier: .standard)
+
+                    let outcome = await ActionRouter.perform(intent, draft: draft)
+                    answer = outcome.text
+                    thinking = false
+                    appState.remember(title: asked, body: draft, source: "Draft")
+                    return
+                }
+
                 // Off the main actor: the network call is the whole reason the Android Memory tab
                 // used to fail with "-1 couldn't search".
                 let reply = try await AgentClient.ask(asked)
@@ -403,6 +422,9 @@ private struct ScrollIfNeeded: ViewModifier {
                 .frame(height: cap)
                 .scrollIndicators(.hidden)
         } else {
+            // No frame at all in this branch. `maxHeight` is not a ceiling a small view ignores —
+            // given a flexible parent it takes the whole allowance, which is what left a two-line
+            // answer sitting in a 420pt box.
             content
         }
     }
