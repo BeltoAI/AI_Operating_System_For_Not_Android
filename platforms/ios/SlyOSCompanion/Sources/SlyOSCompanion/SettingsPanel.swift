@@ -114,6 +114,8 @@ struct SettingsPanel: View {
 
                     group("ZENODO", p: p) { ZenodoSection(palette: p) }
 
+                    group("YOUR CONVERSATIONS", p: p) { ChatImportSection(palette: p) }
+
                     group("IMPORT", p: p) {
                         VStack(alignment: .leading, spacing: 0) {
                             Text("Everything imported stays on this phone.")
@@ -728,5 +730,93 @@ private struct ZenodoSection: View {
             Rectangle().fill(palette.hairline).frame(height: 1)
         }
         .onAppear { token = Zenodo.shared.token }
+    }
+}
+
+
+/// Importing the archives each service is obliged to give you.
+///
+/// The only route to a conversation-aware brain on iPhone. iOS will never let SlyOS watch messages
+/// arrive, so the export is not a fallback — it is the mechanism.
+private struct ChatImportSection: View {
+    let palette: Palette
+
+    @State private var picking: ChatImport.Source?
+    @State private var note: String?
+    @State private var isError = false
+    @State private var working = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: T.sm) {
+            Text("iPhone can't read your messages as they arrive — Apple doesn't allow it. Import "
+                 + "the export each app gives you instead, and SlyOS knows your conversations.")
+                .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ForEach(ChatImport.Source.allCases) { source in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(source.rawValue)
+                            .font(.system(size: T.body)).foregroundStyle(palette.ink)
+                        Spacer()
+                        Button("Import file") { picking = source }
+                            .font(.system(size: T.small, weight: .medium))
+                            .foregroundStyle(palette.bgElevated)
+                            .padding(.horizontal, T.md).padding(.vertical, 8)
+                            .background(Capsule().fill(palette.accent))
+                            .disabled(working)
+                    }
+                    Text(source.howTo)
+                        .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.vertical, T.xs)
+            }
+
+            if working { SlyWaiting("reading your messages") }
+            if let note {
+                Text(note)
+                    .font(.system(size: T.caption))
+                    .foregroundStyle(isError ? palette.danger : palette.good)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .fileImporter(isPresented: Binding(get: { picking != nil },
+                                           set: { if !$0 { picking = nil } }),
+                      allowedContentTypes: picking?.fileTypes ?? [.data],
+                      allowsMultipleSelection: true) { result in
+            guard let source = picking else { return }
+            picking = nil
+            handle(result, source: source)
+        }
+    }
+
+    private func handle(_ result: Result<[URL], Error>, source: ChatImport.Source) {
+        working = true; note = nil
+        Task.detached {
+            do {
+                let urls = try result.get()
+                var total = 0, people = 0
+                var last = ""
+                for url in urls {
+                    let r = try ChatImport.read(url, as: source,
+                                                ownerName: SlySettings.shared.name)
+                    total += r.imported; people = max(people, r.people); last = r.note
+                }
+                await MainActor.run {
+                    isError = total == 0
+                    // Per-conversation exports are normal for WhatsApp, so the count matters more
+                    // than the file count.
+                    note = total == 0 ? last
+                        : "Added \(total.formatted()) messages from \(people) "
+                          + (people == 1 ? "person" : "people") + "."
+                    working = false
+                }
+            } catch {
+                await MainActor.run {
+                    isError = true; note = error.localizedDescription; working = false
+                }
+            }
+        }
     }
 }

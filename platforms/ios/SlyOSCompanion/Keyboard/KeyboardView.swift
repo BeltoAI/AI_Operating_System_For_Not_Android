@@ -167,6 +167,9 @@ struct KeyboardView: View {
                 if !brain.isEmpty { user = "WHAT YOU KNOW:\n\(brain)\n\n" + user }
 
                 draft = try await AgentClient.complete(system: system, user: user, tier: .cheap)
+                // Also on the clipboard, so it can be pasted into an app the keyboard cannot type
+                // into — a search field, another device, anywhere.
+                UIPasteboard.general.string = draft
             } catch {
                 failure = error.localizedDescription
             }

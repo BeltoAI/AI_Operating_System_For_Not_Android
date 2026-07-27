@@ -118,7 +118,7 @@ struct ShareDraftView: View {
                     UIPasteboard.general.string = draft
                     copied = true
                 } label: {
-                    Text(copied ? "Copied" : "Copy")
+                    Text(copied ? "Copied ✓" : "Copy")
                         .font(.system(size: T.body))
                         .foregroundStyle(copied ? p.good : p.ink)
                         .padding(.horizontal, T.lg).padding(.vertical, 11)
@@ -157,6 +157,12 @@ struct ShareDraftView: View {
                 if !context.isEmpty { user = "WHAT YOU KNOW:\n\(context)\n\n" + user }
 
                 draft = try await AgentClient.complete(system: system, user: user, tier: .standard)
+                // Straight to the clipboard. On iOS the reply has to be pasted somewhere by hand
+                // regardless, so making that a single paste rather than copy-then-paste is the
+                // whole saving.
+                UIPasteboard.general.string = draft
+                copied = true
+                DraftLog.shared.record(source: incoming, draft: draft, tone: "Share")
             } catch {
                 failure = error.localizedDescription
             }
