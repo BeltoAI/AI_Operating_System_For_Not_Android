@@ -398,6 +398,7 @@ struct HomePanel: View {
                     HomeChat.add(question: asked, answer: answer)
                     appState.remember(title: made.title, body: "\(kind.noun) — \(made.url)",
                                       source: "Google")
+                    Activity.record(.created, "\(kind.noun): \(made.title)")
                     Outbox.shared.record(what: "Created a \(kind.noun)",
                                          detail: made.title, outcome: "sent")
                     return

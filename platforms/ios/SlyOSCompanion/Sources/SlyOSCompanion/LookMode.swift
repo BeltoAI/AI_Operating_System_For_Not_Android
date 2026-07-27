@@ -70,6 +70,7 @@ enum LookMode {
         // A receipt becomes a line on the ledger as well as a memory. Scanning already worked and
         // led nowhere: the total was a substring of a paragraph, so "how much did I spend this
         // month" could not be answered from a pile of perfectly good scans.
+        Activity.record(.scanned, title, detail: source)
         if source.lowercased().contains("receipt"), let id {
             await Expenses.shared.readReceipt(read, memoryID: id)
         }

@@ -54,6 +54,13 @@ enum AgentClient {
     static func humanise(code: Int, body: String) -> String {
         switch code {
         case 401, 403:
+            // Google, OpenAI and Anthropic all say precisely what is wrong in the body, and
+            // flattening that to "check the key" threw away the only useful part. A key that works
+            // on one phone and 403s on another is not a bad key — it is a restricted one, or an
+            // API not enabled on the project, and the body says which. Guessing wasted an evening.
+            if let reason = reason(in: body), !reason.isEmpty {
+                return "refused: \(reason.prefix(180))"
+            }
             return "that key was rejected — check it in Settings"
         case 429:
             return body.lowercased().contains("quota")
@@ -68,6 +75,25 @@ enum AgentClient {
         default:
             return "failed (\(code))"
         }
+    }
+
+    /// The provider's own explanation, dug out of whichever shape it used.
+    private static func reason(in body: String) -> String? {
+        guard let data = body.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return body.isEmpty ? nil : String(body.prefix(180)) }
+
+        // { "error": { "message": ... } } — Google, OpenAI, Mistral, Groq.
+        if let error = json["error"] as? [String: Any] {
+            if let message = error["message"] as? String { return message }
+            if let status = error["status"] as? String { return status }
+        }
+        // Anthropic nests it the same way but sometimes only carries a type.
+        if let error = json["error"] as? [String: Any], let type = error["type"] as? String {
+            return type
+        }
+        if let message = json["message"] as? String { return message }
+        return nil
     }
 
     // MARK: - Public
@@ -326,7 +352,8 @@ enum AgentClient {
         var failures: [String] = []
         for provider in providers {
             do {
-                return try await sendImage(provider: provider, model: provider.model(for: tier),
+                return try await sendImage(provider: provider,
+                                           model: provider.visionModel(for: tier),
                                            key: router.key(for: provider),
                                            base64: base64, question: question)
             } catch {

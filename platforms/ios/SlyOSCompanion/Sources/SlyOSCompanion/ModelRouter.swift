@@ -56,11 +56,33 @@ final class ModelRouter {
         }
 
         /// Only these can look at an image; a photo must never be routed to a text-only model.
+        /// Whether this provider can be sent a photograph.
+        ///
+        /// Verified against real keys rather than assumed. Mistral's Pixtral answers correctly on a
+        /// test image; Groq is deliberately absent — the only multimodal model its API exposes is
+        /// persistently over capacity, and a provider that is listed as able to see but never
+        /// answers is worse than one that is honestly excluded, because the chain wastes a call on
+        /// it every time.
+        ///
+        /// This matters more than it looks. With only Anthropic, OpenAI and Gemini able to see, one
+        /// bad afternoon across three accounts took the camera out completely — which is exactly
+        /// what happened.
         var canSeeImages: Bool {
             switch self {
-            case .anthropic, .openai, .gemini: true
-            // Depends on the model the owner has configured there, so assume not.
-            case .groq, .cerebras, .mistral, .openclaw: false
+            case .anthropic, .openai, .gemini, .mistral: true
+            case .groq, .cerebras, .openclaw: false
+            }
+        }
+
+        /// The model to use when there is a picture in the request.
+        ///
+        /// Separate from `model(for:)` because a provider's default text model usually cannot see,
+        /// and sending an image to one produces a confident answer about nothing — worse than an
+        /// error.
+        func visionModel(for tier: Tier) -> String {
+            switch self {
+            case .mistral: "pixtral-12b-2409"
+            default: model(for: tier)
             }
         }
 

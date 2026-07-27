@@ -162,6 +162,7 @@ final class MeetingNotes {
         SlyStore.shared.insert(kind: "meeting", title: name, body: text,
                                source: "Meeting", date: when)
 
+        Activity.record(.remembered, name, detail: "\(text.count / 5) words transcribed")
         guard ModelRouter.shared.isConfigured else { return name }
 
         let system = """

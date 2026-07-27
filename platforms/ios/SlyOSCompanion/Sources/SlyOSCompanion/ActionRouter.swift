@@ -293,6 +293,9 @@ enum ActionRouter {
                     withMeet: !blocker && !guests.isEmpty)
 
                 let who = guests.isEmpty ? "nobody else" : guests.joined(separator: ", ")
+                Activity.record(.scheduled, event.title,
+                                detail: "\(slot.start.formatted(date: .abbreviated, time: .shortened))"
+                                    + (guests.isEmpty ? "" : " · invited \(guests.joined(separator: ", "))"))
                 Outbox.shared.record(what: "Calendar invite — \(event.title)",
                                      detail: "\(slot.start.formatted()) · invited \(who)",
                                      outcome: "sent")
@@ -321,6 +324,7 @@ enum ActionRouter {
                                + "notifications, or nothing can go off. Turn it on in Settings.",
                                didSomething: false)
             }
+            Activity.record(.scheduled, "a timer for \(Timers.phrase(seconds))")
             Outbox.shared.record(what: "Timer — \(Timers.phrase(seconds))",
                                  detail: "goes off \(fires.formatted(date: .omitted, time: .shortened))",
                                  outcome: "sent")
@@ -341,6 +345,7 @@ enum ActionRouter {
                 return Outcome(text: "**Nothing added** — SlyOS needs access to Reminders. Turn it "
                                + "on in Settings.", didSomething: false)
             }
+            Activity.record(.scheduled, what, detail: "on your list")
             Outbox.shared.record(what: "Added to your list", detail: what, outcome: "sent")
             var text = "Added **\(what)** to your list."
             if let due {
