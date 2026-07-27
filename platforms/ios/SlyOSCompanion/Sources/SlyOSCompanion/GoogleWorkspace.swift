@@ -198,8 +198,12 @@ enum GoogleWorkspace {
 
         var requests: [[String: Any]] = []
         for (i, slide) in slides.enumerated() {
-            let pageId = "slide_\(i)"
-            let titleId = "t_\(i)", bodyId = "b_\(i)"
+            // Slides rejects any object id shorter than five characters, so "t_0" and "b_0" failed
+            // the whole batch on the very first text box — every deck came back a 400 and no deck
+            // was ever built. The page id happened to be long enough, which is why this looked like
+            // a problem with the content rather than with the ids.
+            let pageId = "slyPage\(i)"
+            let titleId = "slyTitle\(i)", bodyId = "slyBody\(i)"
 
             requests.append(["createSlide": [
                 "objectId": pageId,
