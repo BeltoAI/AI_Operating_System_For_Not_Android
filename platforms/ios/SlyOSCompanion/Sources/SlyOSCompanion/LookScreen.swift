@@ -323,7 +323,17 @@ final class CameraSession {
         await withCheckedContinuation { continuation in
             let delegate = PhotoDelegate { continuation.resume(returning: $0) }
             self.delegate = delegate   // the system holds this weakly; losing it drops the callback
-            output.capturePhoto(with: AVCapturePhotoSettings(), delegate: delegate)
+
+            // JPEG explicitly. The default on a modern iPhone is HEIC, and every vision API is sent
+            // `media_type: image/jpeg` — so the bytes and the label disagreed and the request was
+            // rejected. Asking for JPEG at the source is more reliable than transcoding after.
+            let settings: AVCapturePhotoSettings
+            if output.availablePhotoCodecTypes.contains(.jpeg) {
+                settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+            } else {
+                settings = AVCapturePhotoSettings()
+            }
+            output.capturePhoto(with: settings, delegate: delegate)
         }
     }
 

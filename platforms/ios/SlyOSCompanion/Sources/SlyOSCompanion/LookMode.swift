@@ -18,6 +18,9 @@ enum LookMode {
     /// 1568px on the long edge is Anthropic's own recommended maximum; beyond it they downscale
     /// anyway, so sending more costs upload time and buys nothing.
     static func prepareForVision(_ data: Data, maxEdge: CGFloat = 1568) -> Data {
+        // Returning the input unchanged on failure was itself a bug: the caller labels whatever it
+        // gets as image/jpeg, so a HEIC that could not be decoded went out wearing the wrong
+        // media type and was rejected. Now anything undecodable is re-encoded or reported.
         guard let image = UIImage(data: data) else { return data }
         let longest = max(image.size.width, image.size.height)
         guard longest > maxEdge else {

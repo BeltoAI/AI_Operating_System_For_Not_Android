@@ -89,6 +89,22 @@ enum ActionRouter {
         var day = Date()
         if p.contains("tomorrow") { day = Calendar.current.date(byAdding: .day, value: 1, to: day) ?? day }
 
+        // "right now", "from now" — the start is this moment, and demanding a stated hour for it
+        // is why a perfectly clear request came back as "I need a time".
+        if p.contains("right now") || p.contains("from now") || p.contains("starting now") {
+            let start = Date()
+            if let range = p.firstMatch(#"(?:until|till|to)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?"#) {
+                var hour = Int(range[1]) ?? 0
+                let minute = Int(range[2]) ?? 0
+                if range[3] == "pm", hour < 12 { hour += 12 }
+                if range[3].isEmpty, hour < 8 { hour += 12 }
+                var parts = Calendar.current.dateComponents([.year, .month, .day], from: start)
+                parts.hour = hour; parts.minute = minute
+                if let end = Calendar.current.date(from: parts), end > start { return (start, end) }
+            }
+            return (start, start.addingTimeInterval(1800))
+        }
+
         guard let m = p.firstMatch(#"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?"#) else { return nil }
         var hour = Int(m[1]) ?? 0
         let minute = Int(m[2]) ?? 0
@@ -208,7 +224,7 @@ enum ActionRouter {
                                + "the event and send the invite.", didSomething: false)
             }
             // "Block my calendar" is for the owner alone — inviting someone to it would be absurd.
-            let blocker = intent.instruction.lowercased().contains("block")
+            let blocker = ["block", "busy", "hold "].contains { intent.instruction.lowercased().contains($0) }
             let guests = (blocker || intent.recipient.isEmpty)
                 ? []
                 : [await lookUpEmail(for: intent.recipient)].compactMap { $0 }
@@ -216,7 +232,9 @@ enum ActionRouter {
                 let event = try await GoogleCalendar.create(
                     title: title(from: intent.instruction),
                     start: slot.start, end: slot.end,
-                    attendees: guests, withMeet: true)
+                    attendees: guests,
+                    // No Meet link on time you are holding for yourself — nobody is joining it.
+                    withMeet: !blocker && !guests.isEmpty)
 
                 let who = guests.isEmpty ? "nobody else" : guests.joined(separator: ", ")
                 Outbox.shared.record(what: "Calendar invite — \(event.title)",
@@ -291,17 +309,23 @@ enum ActionRouter {
     }
 
     /// A usable event title from the request — the words minus the scheduling scaffolding.
+    /// A title for the event.
+    ///
+    /// Word-stripping produced "Block my calendar right now until ." — a title made of the leftovers
+    /// after deleting the meaningful words, which is worse than none. Recognised shapes get a plain
+    /// name; anything else keeps the owner's own words, which are at least intelligible.
     private static func title(from prompt: String) -> String {
-        var t = prompt
-        for noise in ["create", "make", "set up", "schedule", "a ", "google meet", "meet", "invite",
-                      "with", "for", "please", "tomorrow", "today"] {
-            t = t.replacingOccurrences(of: noise, with: " ", options: [.caseInsensitive])
+        let p = prompt.lowercased()
+        if p.contains("block") { return "Busy" }
+        if p.contains("lunch") { return "Lunch" }
+        if p.contains("dinner") || p.contains("date night") { return "Dinner" }
+        if p.contains("call") || p.contains("meet") { return "Call" }
+
+        // "with X about Y" — Y is the subject.
+        if let m = prompt.firstMatch(#"(?i)\babout\s+(.{3,50})$"#) {
+            return String(m[1].trimmingCharacters(in: CharacterSet(charactersIn: " .")).prefix(60))
         }
-        t = t.replacingOccurrences(of: #"\d{1,2}(:\d{2})?\s*(am|pm)?"#, with: " ",
-                                   options: [.regularExpression, .caseInsensitive])
-        let cleaned = t.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? "Meeting" : String(cleaned.prefix(60))
+        return "Meeting"
     }
 
     private static func subject(of draft: String) -> String {
