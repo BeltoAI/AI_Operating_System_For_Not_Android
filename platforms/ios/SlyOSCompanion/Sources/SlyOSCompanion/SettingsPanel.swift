@@ -128,6 +128,8 @@ struct SettingsPanel: View {
                         }
                     }
 
+                    group("SPENDING", p: p) { ExpensesSection(palette: p) }
+
                     group("YOUR PHOTOS", p: p) { PhotoSection(palette: p) }
 
                     group("IS IT WORKING?", p: p) { SelfTestSection(palette: p) }
@@ -1104,5 +1106,133 @@ private struct PhotoSection: View {
         note = read == 0
             ? "Nothing new to read."
             : "Read \(read) photo\(read == 1 ? "" : "s"). Tap again to keep going through your library."
+    }
+}
+
+
+/// What the receipts add up to.
+///
+/// Scanning was already there and led nowhere — the total was a substring of a paragraph, so a pile
+/// of perfectly good scans could not answer the only question anyone asks them. Every row here is
+/// editable, because OCR misreads and a ledger you cannot correct is one you stop trusting after
+/// the first wrong number.
+private struct ExpensesSection: View {
+    let palette: Palette
+    @State private var ledger = Expenses.shared
+    @State private var editing: Expenses.Entry?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: T.sm) {
+            let month = ledger.summary()
+            if month.isEmpty {
+                Text("Scan a receipt in Look and it becomes a line here — merchant, amount, "
+                     + "category — so \"how much did I spend this month\" has a real answer. Read "
+                     + "on this phone; no receipt is uploaded.")
+                    .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text(month)
+                    .font(.system(size: T.small)).foregroundStyle(palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ForEach(ledger.entries.prefix(8)) { e in
+                    Button { editing = e } label: { row(e) }
+                }
+                if ledger.entries.count > 8 {
+                    Text("+ \(ledger.entries.count - 8) more")
+                        .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                }
+            }
+        }
+        .task { ledger.load() }
+        .sheet(item: $editing) { entry in
+            EditExpense(entry: entry, palette: palette)
+        }
+    }
+
+    private func row(_ e: Expenses.Entry) -> some View {
+        HStack(spacing: T.sm) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(e.merchant.isEmpty ? "Unknown" : e.merchant)
+                    .font(.system(size: T.small)).foregroundStyle(palette.ink).lineLimit(1)
+                Text("\(e.category) · \(e.date.formatted(date: .abbreviated, time: .omitted))")
+                    .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+            }
+            Spacer()
+            Text(e.formatted)
+                .font(.system(size: T.small, weight: .medium)).foregroundStyle(palette.ink)
+            Image(systemName: "pencil")
+                .font(.system(size: 11)).foregroundStyle(palette.inkFaint)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+}
+
+/// Correcting a line. OCR misreads a total often enough that this is not optional.
+private struct EditExpense: View {
+    let entry: Expenses.Entry
+    let palette: Palette
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var merchant: String
+    @State private var amount: String
+    @State private var category: String
+
+    private static let categories = ["Groceries", "Restaurant", "Transport", "Fuel", "Shopping",
+                                     "Health", "Bills", "Travel", "Entertainment", "Services", "Other"]
+
+    init(entry: Expenses.Entry, palette: Palette) {
+        self.entry = entry
+        self.palette = palette
+        _merchant = State(initialValue: entry.merchant)
+        _amount = State(initialValue: String(format: "%.2f", entry.amount))
+        _category = State(initialValue: entry.category.isEmpty ? "Other" : entry.category)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Merchant") {
+                    TextField("Where", text: $merchant)
+                }
+                Section("Amount") {
+                    TextField("0.00", text: $amount).keyboardType(.decimalPad)
+                }
+                Section("Category") {
+                    Picker("Category", selection: $category) {
+                        ForEach(Self.categories, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+                Section {
+                    Button("Remove from spending", role: .destructive) {
+                        Expenses.shared.remove(entry)
+                        dismiss()
+                    }
+                } footer: {
+                    Text("The scan itself stays in your brain — only the money line goes.")
+                }
+            }
+            .navigationTitle(entry.date.formatted(date: .abbreviated, time: .omitted))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }.tint(palette.accent)
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.tint(palette.inkFaint)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        // Rewritten rather than updated in place: one row, and a delete-plus-insert cannot leave
+        // the ledger holding a half-edited line if the app dies between the two.
+        let value = Double(amount.replacingOccurrences(of: ",", with: ".")) ?? entry.amount
+        Expenses.shared.remove(entry)
+        Expenses.shared.record(merchant: merchant, amount: value, currency: entry.currency,
+                               category: category, date: entry.date, memoryID: entry.memoryID)
+        dismiss()
     }
 }

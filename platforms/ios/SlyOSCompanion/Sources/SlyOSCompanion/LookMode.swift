@@ -65,7 +65,14 @@ enum LookMode {
         // First line makes a serviceable title — on a receipt it is the merchant, on a letter the
         // sender, which is what someone would search for later.
         let title = read.split(separator: "\n").first.map(String.init) ?? "Scan"
-        SlyStore.shared.insert(kind: "doc", title: title, body: read, source: source)
+        let id = SlyStore.shared.insert(kind: "doc", title: title, body: read, source: source)
+
+        // A receipt becomes a line on the ledger as well as a memory. Scanning already worked and
+        // led nowhere: the total was a substring of a paragraph, so "how much did I spend this
+        // month" could not be answered from a pile of perfectly good scans.
+        if source.lowercased().contains("receipt"), let id {
+            await Expenses.shared.readReceipt(read, memoryID: id)
+        }
         return read
     }
 }

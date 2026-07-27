@@ -31,7 +31,21 @@ struct PowersPanel: View {
         let tint: Color
         /// What it needs. Empty means it works right now.
         let needs: String
+        /// The one thing that would switch it on.
+        ///
+        /// Without this the store was decorative: a grid of cards saying "needs your calendar"
+        /// with no way to give it one. Naming the requirement and then offering no route to it is
+        /// worse than not listing the power at all — it reads as a shop that will not sell you
+        /// anything.
+        var fix: Fix = .none
         var ready: Bool { needs.isEmpty }
+    }
+
+    enum Fix: Equatable {
+        case none
+        case permission(Permissions.Capability)
+        case settings          // open SlyOS settings — a key, Google, a token
+        case importSomething   // the brain is empty
     }
 
     var body: some View {
@@ -44,7 +58,7 @@ struct PowersPanel: View {
                 VStack(alignment: .leading, spacing: T.lg) {
                     if let featured { FeaturedCard(power: featured, palette: p) }
                     grid("WORKS ON YOUR PHONE NOW", powers.filter { $0.ready && matches($0) })
-                    grid("NEEDS SETUP", powers.filter { !$0.ready && matches($0) })
+                    grid("TAP TO SWITCH ON", powers.filter { !$0.ready && matches($0) })
                     notPossible
                 }
                 .padding(.top, T.md)
@@ -155,44 +169,54 @@ struct PowersPanel: View {
         [
             Power(id: "recall", title: "answer from everything you've ever been told",
                   rating: 4.9, category: .know, glyph: "R", tint: .hex(0xE8642C),
-                  needs: brainCount > 0 ? "" : "import something first"),
+                  needs: brainCount > 0 ? "" : "import something first",
+                  fix: .importSomething),
 
             Power(id: "voice", title: "answer as you, not as a chatbot",
                   rating: 4.8, category: .speak, glyph: "V", tint: .hex(0x8A6DBE),
-                  needs: router.isConfigured ? "" : "an AI key — several are free"),
+                  needs: router.isConfigured ? "" : "an AI key — several are free",
+                  fix: .settings),
 
             Power(id: "look", title: "read anything you point at",
                   rating: 4.8, category: .see, glyph: "L", tint: .hex(0xC85A7C),
-                  needs: permissions.state(.camera) == .granted ? "" : "the camera"),
+                  needs: permissions.state(.camera) == .granted ? "" : "the camera",
+                  fix: .permission(.camera)),
 
             Power(id: "talk", title: "talk to it instead of typing",
                   rating: 4.6, category: .speak, glyph: "T", tint: .hex(0xE39A3C),
                   needs: permissions.state(.microphone) == .granted
-                      && permissions.state(.speech) == .granted ? "" : "the microphone"),
+                      && permissions.state(.speech) == .granted ? "" : "the microphone",
+                  fix: .permission(.microphone)),
 
             Power(id: "agenda", title: "know what's on before you ask",
                   rating: 4.7, category: .know, glyph: "N", tint: .hex(0x4285F4),
-                  needs: permissions.state(.calendar) == .granted ? "" : "your calendar"),
+                  needs: permissions.state(.calendar) == .granted ? "" : "your calendar",
+                  fix: .permission(.calendar)),
 
             Power(id: "meet", title: "put real Meet links in invites people actually get",
                   rating: 4.9, category: .create, glyph: "G", tint: .hex(0x1D8F63),
-                  needs: googleConnected ? "" : "Google connected"),
+                  needs: googleConnected ? "" : "Google connected",
+                  fix: .settings),
 
             Power(id: "reply", title: "draft a reply in your voice, anywhere",
                   rating: 4.7, category: .speak, glyph: "D", tint: .hex(0xB0468C),
-                  needs: router.isConfigured ? "" : "an AI key"),
+                  needs: router.isConfigured ? "" : "an AI key",
+                  fix: .settings),
 
             Power(id: "paper", title: "research a topic properly while you do something else",
                   rating: 4.7, category: .create, glyph: "P", tint: .hex(0x6E5AA8),
-                  needs: router.isConfigured ? "" : "an AI key"),
+                  needs: router.isConfigured ? "" : "an AI key",
+                  fix: .settings),
 
             Power(id: "backup", title: "keep your whole brain in your own Drive",
                   rating: 4.5, category: .know, glyph: "B", tint: .hex(0x5DCAA5),
-                  needs: googleConnected ? "" : "Google connected"),
+                  needs: googleConnected ? "" : "Google connected",
+                  fix: .settings),
 
             Power(id: "claw", title: "read your WhatsApp and Telegram",
                   rating: 4.4, category: .know, glyph: "W", tint: .hex(0x1FA855),
-                  needs: clawConnected ? "" : "an OpenClaw gateway you run")
+                  needs: clawConnected ? "" : "an OpenClaw gateway you run",
+                  fix: .settings)
         ]
     }
 
@@ -247,8 +271,39 @@ private struct FeaturedCard: View {
 private struct PowerCard: View {
     let power: PowersPanel.Power
     let palette: Palette
+    @State private var asking = false
+    @State private var showSettings = false
 
     var body: some View {
+        Button {
+            guard !power.ready else { return }
+            switch power.fix {
+            case .permission(let capability):
+                asking = true
+                Task {
+                    await Permissions.shared.request(capability)
+                    // Already refused once: iOS never asks again, so the only route left is the
+                    // Settings app. Sending them there is the difference between a dead card and
+                    // a working one.
+                    if Permissions.shared.state(capability) != .granted {
+                        Permissions.shared.openSettings()
+                    }
+                    asking = false
+                }
+            case .settings, .importSomething:
+                showSettings = true
+            case .none:
+                break
+            }
+        } label: {
+            card
+        }
+        .buttonStyle(.plain)
+        .disabled(power.ready)
+        .sheet(isPresented: $showSettings) { SettingsPanel() }
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 0) {
             RoundedRectangle(cornerRadius: 16)
                 .fill(power.tint)
@@ -267,10 +322,19 @@ private struct PowerCard: View {
 
             Spacer(minLength: 12)
 
-            Text("★ \(power.rating, specifier: "%.1f")  ·  \(power.needs.isEmpty ? "works on your phone" : "needs \(power.needs)")")
-                .font(.system(size: T.caption))
-                .foregroundStyle(power.ready ? palette.accent : palette.inkFaint)
-                .fixedSize(horizontal: false, vertical: true)
+            // What it needs, and — when it isn't ready — that tapping does something about it.
+            HStack(spacing: 4) {
+                if !power.ready && power.fix != .none {
+                    Image(systemName: asking ? "hourglass" : "arrow.right.circle.fill")
+                        .font(.system(size: 11)).foregroundStyle(palette.accent)
+                }
+                Text(power.ready
+                     ? "★ \(String(format: "%.1f", power.rating))  ·  works on your phone"
+                     : "tap to add \(power.needs)")
+                    .font(.system(size: T.caption))
+                    .foregroundStyle(power.ready ? palette.accent : palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, minHeight: 210, alignment: .topLeading)
         .padding(14)

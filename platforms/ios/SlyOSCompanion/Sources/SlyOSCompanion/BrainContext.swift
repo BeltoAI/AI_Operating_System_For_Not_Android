@@ -189,6 +189,22 @@ enum BrainContext {
             }
         }
 
+        // Money questions answered from the ledger, not from prose. Gated, so an unrelated prompt
+        // pays nothing for it.
+        let l = question.lowercased()
+        if ["spend", "spent", "spending", "expense", "cost", "how much", "receipt", "budget",
+            "money"].contains(where: l.contains) {
+            let thisMonth = Expenses.shared.summary()
+            let lastMonth = Expenses.shared.summary(monthsBack: 1)
+            if !thisMonth.isEmpty || !lastMonth.isEmpty {
+                s += "\n\nWHAT YOU ACTUALLY SPENT, FROM YOUR OWN RECEIPTS (use these exact "
+                    + "numbers for money questions, and say if a month has no receipts rather than "
+                    + "estimating):\n"
+                if !thisMonth.isEmpty { s += "· \(thisMonth)\n" }
+                if !lastMonth.isEmpty { s += "· \(lastMonth)\n" }
+            }
+        }
+
         // The ranked hybrid recall — keyword and meaning, merged. The bulk of the context.
         let recalled = await AgentClient.corpus(for: question)
         if !recalled.isEmpty {

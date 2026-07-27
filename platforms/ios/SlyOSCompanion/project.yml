@@ -102,6 +102,7 @@ targets:
       - path: Sources/SlyOSCompanion/Embedder.swift
       - path: Sources/SlyOSCompanion/BrainContext.swift
       - path: Sources/SlyOSCompanion/Distiller.swift
+      - path: Sources/SlyOSCompanion/Expenses.swift
     configFiles:
       Debug: Secrets.xcconfig
       Release: Secrets.xcconfig
@@ -156,6 +157,7 @@ targets:
       - path: Sources/SlyOSCompanion/Embedder.swift
       - path: Sources/SlyOSCompanion/BrainContext.swift
       - path: Sources/SlyOSCompanion/Distiller.swift
+      - path: Sources/SlyOSCompanion/Expenses.swift
     configFiles:
       Debug: Secrets.xcconfig
       Release: Secrets.xcconfig
