@@ -98,6 +98,10 @@ targets:
       - path: Sources/SlyOSCompanion/SlyProfile.swift
       - path: Sources/SlyOSCompanion/OpenClawPolicy.swift
       - path: Sources/SlyOSCompanion/DraftLog.swift
+      - path: Sources/SlyOSCompanion/VectorStore.swift
+      - path: Sources/SlyOSCompanion/Embedder.swift
+      - path: Sources/SlyOSCompanion/BrainContext.swift
+      - path: Sources/SlyOSCompanion/Distiller.swift
     configFiles:
       Debug: Secrets.xcconfig
       Release: Secrets.xcconfig
@@ -148,6 +152,10 @@ targets:
       - path: Sources/SlyOSCompanion/SlySettings.swift
       - path: Sources/SlyOSCompanion/SlyProfile.swift
       - path: Sources/SlyOSCompanion/DraftLog.swift
+      - path: Sources/SlyOSCompanion/VectorStore.swift
+      - path: Sources/SlyOSCompanion/Embedder.swift
+      - path: Sources/SlyOSCompanion/BrainContext.swift
+      - path: Sources/SlyOSCompanion/Distiller.swift
     configFiles:
       Debug: Secrets.xcconfig
       Release: Secrets.xcconfig

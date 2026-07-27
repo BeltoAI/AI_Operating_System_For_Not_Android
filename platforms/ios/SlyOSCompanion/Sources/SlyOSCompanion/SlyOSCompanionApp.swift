@@ -34,6 +34,27 @@ struct SlyOSCompanionApp: App {
                     guard let handled else { return }
                     appState.handle(intent: handled)
                 }
+                .task {
+                    // Publish what is switched on, so the keyboard and share extension — which
+                    // cannot reach GoogleAuth or EventKit at all — still describe this phone's real
+                    // capabilities rather than a guess.
+                    BrainContext.Live(
+                        googleConnected: GoogleAuth.shared.isConnected,
+                        calendarGranted: Permissions.shared.state(.calendar) == .granted,
+                        remindersGranted: Permissions.shared.state(.reminders) == .granted,
+                        contactsGranted: Permissions.shared.state(.contacts) == .granted,
+                        locationGranted: Permissions.shared.state(.location) == .granted,
+                        openClawReady: OpenClaw.shared.isConfigured
+                    ).publish()
+
+                    // Distil what has been imported into things the brain knows. On the foreground
+                    // rather than in a background task: iOS grants background time on its own
+                    // schedule and often not at all, and a nightly job that never runs is worse
+                    // than no job — it looks like the feature works.
+                    await Distiller.runIfDue()
+                    // Embeddings for anything imported since last time, on a time budget.
+                    await EmbedWorker.shared.run()
+                }
         }
     }
 }

@@ -142,7 +142,7 @@ struct ShareDraftView: View {
             do {
                 // The brain answers here exactly as it does in the app — same store, same profile,
                 // because both live in the shared App Group container.
-                let context = AgentClient.corpus(for: incoming)
+                let context = await AgentClient.corpus(for: incoming)
                 // The message being replied to was written by someone else, by definition. This is
                 // the single most injectable surface in the app: whatever arrives here is text a
                 // stranger chose, handed straight to a model.

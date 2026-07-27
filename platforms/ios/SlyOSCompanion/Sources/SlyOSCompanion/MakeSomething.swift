@@ -45,7 +45,7 @@ enum MakeSomething {
 
     /// Make the thing and return where it lives.
     static func make(_ kind: Kind, from prompt: String) async throws -> Made {
-        let context = AgentClient.corpus(for: prompt)
+        let context = await AgentClient.corpus(for: prompt)
         let profile = SlyProfile.shared.fullProfile(limit: 1_500)
 
         var system = """

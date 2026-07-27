@@ -156,7 +156,7 @@ final class MailWatch {
     }
 
     private func draft(for item: Item) async -> String {
-        let context = AgentClient.corpus(for: "\(item.from) \(item.subject)")
+        let context = await AgentClient.corpus(for: "\(item.from) \(item.subject)")
         var system = """
             You are writing a reply as the owner of this mailbox, in their voice. Output only the \
             body of the reply — no greeting line repeating the subject, no "here is a draft", no \

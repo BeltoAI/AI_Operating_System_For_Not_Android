@@ -72,7 +72,7 @@ enum ScreenDrafts {
     static func draft(_ notices: [Notice]) async -> [Notice] {
         var out: [Notice] = []
         for var notice in notices {
-            let context = AgentClient.corpus(for: "\(notice.person) \(notice.message)")
+            let context = await AgentClient.corpus(for: "\(notice.person) \(notice.message)")
             var system = """
                 You are drafting a reply as the owner, in their voice, to a message that arrived on \
                 \(notice.app). Output only the reply — no preamble, no quotes, no explanation. Keep \

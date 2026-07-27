@@ -96,7 +96,7 @@ struct DraftReplyIntent: AppIntent {
     var message: String
 
     func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
-        let context = AgentClient.corpus(for: message)
+        let context = await AgentClient.corpus(for: message)
         var system = """
             You are drafting a reply as the owner, in their voice. Output only the reply — no \
             preamble, no quotes, no explanation.

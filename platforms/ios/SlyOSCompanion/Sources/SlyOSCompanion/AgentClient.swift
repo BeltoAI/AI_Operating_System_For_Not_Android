@@ -73,15 +73,30 @@ enum AgentClient {
     // MARK: - Public
 
     /// Answer a question using the brain as ground truth.
-    static func ask(_ question: String, tier: ModelRouter.Tier = .standard) async throws -> String {
-        let context = corpus(for: question)
-        let system = groundedSystemPrompt(hasContext: !context.isEmpty)
+    ///
+    /// The context comes from `BrainContext` rather than being assembled here, so this path, the
+    /// keyboard, the share extension and Siri are all grounded in exactly the same material. When
+    /// they each built their own, the Memory tab could answer something Home denied knowing.
+    static func ask(_ question: String, tier: ModelRouter.Tier = .standard,
+                    history: [(role: String, text: String)] = []) async throws -> String {
+        let context = await BrainContext.build(for: question)
+        let system = groundedSystemPrompt(hasContext: !lastRecallEmpty)
             + profileBlock()
             + (await placeBlock(for: question))
             + (await agendaBlock(for: question))
-        let user = context.isEmpty
-            ? question
-            : "WHAT YOU KNOW:\n\(context)\n\nQUESTION: \(question)"
+
+        // The conversation so far, when there is one. Without it every prompt is standalone: upload
+        // a photo, get its text read out, ask "what was it?" — and the app has already forgotten.
+        var user = ""
+        if !history.isEmpty {
+            user += "THE CONVERSATION SO FAR (earlier turns of this same chat — 'it', 'that' and "
+                + "'they' in the question below refer to things said here):\n"
+            for turn in history {
+                user += "\(turn.role == "user" ? "OWNER" : "YOU"): \(turn.text.prefix(1_200))\n"
+            }
+            user += "\n"
+        }
+        user += context.isEmpty ? question : "WHAT YOU KNOW:\n\(context)\n\nQUESTION: \(question)"
         return try await complete(system: system, user: user, tier: tier)
     }
 
@@ -164,7 +179,9 @@ enum AgentClient {
     /// Capped inside `fullProfile` rather than here — an unbounded profile is what once ate the
     /// entire context window and left no room for the memories the question was about.
     private static func profileBlock() -> String {
-        let profile = SlyProfile.shared.fullProfile()
+        // Filled-in fields plus what has been distilled from the owner's own history. A profile is
+        // only what someone bothered to type; the learned half is what the brain worked out.
+        let profile = SlyProfile.shared.fullProfile() + Distiller.block()
         guard !profile.isEmpty else { return "" }
         let name = SlySettings.shared.name.isEmpty ? "the owner" : SlySettings.shared.name
 
@@ -250,14 +267,27 @@ enum AgentClient {
     /// what a stranger asked instead of what its owner asked.
     nonisolated(unsafe) private(set) static var lastCorpusWasUntrusted = false
 
+    /// Whether the last recall found nothing. Read when building the system prompt: a model told it
+    /// has context when it has none answers from invention instead of saying it doesn't know.
+    nonisolated(unsafe) private(set) static var lastRecallEmpty = true
+
     /// Gather the memories most relevant to a question, inside the budget.
+    ///
+    /// Synchronous, and therefore keyword-only. Prefer `corpus(for:) async` — it adds the semantic
+    /// half, which is what finds a commitment nobody phrased using the word "promise".
     static func corpus(for question: String) -> String {
         let store = SlyStore.shared
         var hits = store.search(question, limit: 40)
         // With nothing matched, recent memory is better than none — it is at least about the owner.
         if hits.isEmpty { hits = store.recent(limit: 12) }
         lastCorpusWasUntrusted = Untrusted.present(in: hits)
+        lastRecallEmpty = hits.isEmpty
 
+        return assemble(hits)
+    }
+
+    /// Turn ranked memories into the context block, inside the budget.
+    private static func assemble(_ hits: [Memory]) -> String {
         var out: [String] = []
         var used = 0
         for m in hits {
@@ -369,6 +399,48 @@ enum AgentClient {
             return ((message?["content"] as? String) ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
+    }
+
+    /// The same, with semantic recall.
+    ///
+    /// **Hybrid, not a replacement.** Keyword search is exact and unbeatable for a name or an
+    /// invoice number; embeddings find meaning and miss literals. Running both and merging means
+    /// adding semantic search can never make a result worse than it was — which matters, because a
+    /// retrieval change that regresses "who is Carlos" is not worth any improvement elsewhere.
+    ///
+    /// Merged by reciprocal rank: a memory both halves rank highly beats one that only a single
+    /// half loves. That needs no score calibration between two incomparable scales.
+    static func corpus(for question: String) async -> String {
+        let store = SlyStore.shared
+        let keyword = store.search(question, limit: 40)
+
+        var semantic: [Memory] = []
+        if Embedder.isConfigured, let vector = await Embedder.embedQuery(question) {
+            let near = VectorStore.shared.nearest(to: vector, limit: 40)
+            semantic = store.byIDs(near.map(\.id))
+        }
+
+        var merged: [Memory]
+        if semantic.isEmpty {
+            merged = keyword
+        } else {
+            var score: [Int64: Double] = [:]
+            var byID: [Int64: Memory] = [:]
+            // k = 60 is the usual constant: it stops the top one or two results from dominating a
+            // list that the other half disagrees with.
+            for (rank, m) in keyword.enumerated() {
+                score[m.id, default: 0] += 1.0 / (60.0 + Double(rank)); byID[m.id] = m
+            }
+            for (rank, m) in semantic.enumerated() {
+                score[m.id, default: 0] += 1.0 / (60.0 + Double(rank)); byID[m.id] = m
+            }
+            merged = score.sorted { $0.value > $1.value }.compactMap { byID[$0.key] }
+        }
+
+        lastRecallEmpty = merged.isEmpty
+        if merged.isEmpty { merged = store.recent(limit: 12) }
+        lastCorpusWasUntrusted = Untrusted.present(in: merged)
+        return assemble(merged)
     }
 
     // MARK: - Providers

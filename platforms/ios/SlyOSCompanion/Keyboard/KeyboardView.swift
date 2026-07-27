@@ -156,7 +156,7 @@ struct KeyboardView: View {
 
         Task {
             do {
-                let brain = AgentClient.corpus(for: incoming)
+                let brain = await AgentClient.corpus(for: incoming)
                 var system = """
                     You are drafting a reply *as the owner*, to the message below. Output only the \
                     reply itself — no preamble, no quotes, no explanation, no subject line. \

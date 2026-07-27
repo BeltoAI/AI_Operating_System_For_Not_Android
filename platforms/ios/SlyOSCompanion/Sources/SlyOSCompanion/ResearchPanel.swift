@@ -193,7 +193,7 @@ struct ResearchPanel: View {
 
         Task {
             do {
-                let context = AgentClient.corpus(for: q)
+                let context = await AgentClient.corpus(for: q)
                 let system = """
                     You are SlyOS writing a paper for its owner. Go deeper than a chat reply: lay out \
                     what is actually true, what follows from it, and what the owner should do. Use \
@@ -314,67 +314,181 @@ private struct PaperView: View {
 }
 
 /// Chat — a running conversation with the brain, kept in memory like everything else.
+/// Chat — separate conversations that persist, mirroring the Android Chat screen.
+///
+/// It was one ephemeral list of turns held in `@State`: switching tabs lost the conversation, every
+/// question reached the model with no memory of the one before it, and there was no way to keep two
+/// subjects apart. All three are the same missing piece — somewhere to put a conversation.
 private struct ChatMode: View {
     let palette: Palette
 
+    @State private var store = ChatStore.shared
     @State private var input = ""
-    @State private var turns: [(you: String, sly: String)] = []
     @State private var working = false
+    /// nil = the list of conversations; otherwise the one being read.
+    @State private var openThread: Int64?
+    @State private var renaming: Int64?
+    @State private var newTitle = ""
     @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: T.sm) {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: T.md) {
-                    ForEach(Array(turns.enumerated()), id: \.offset) { _, turn in
-                        VStack(alignment: .leading, spacing: T.sm) {
-                            Text(turn.you)
-                                .font(.system(size: T.body)).foregroundStyle(palette.inkSoft)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                            if turn.sly.isEmpty {
-                                SlyWaiting("thinking")
-                            } else {
-                                AnswerView(text: turn.sly)
-                            }
-                        }
-                    }
-                }
-                .padding(.vertical, T.md)
-            }
-            .scrollIndicators(.hidden)
-
-            HStack(spacing: T.sm) {
-                TextField("", text: $input, prompt:
-                    Text("say something").foregroundStyle(palette.inkFaint))
-                    .font(.system(size: T.body)).foregroundStyle(palette.ink)
-                    .textFieldStyle(.plain)
-                    .focused($focused)
-                    .submitLabel(.send)
-                    .onSubmit(send)
-                    .padding(.horizontal, T.md).padding(.vertical, 12)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(palette.bgElevated.opacity(0.6)))
-                Button(action: send) {
-                    Text("Send").font(.system(size: T.body)).foregroundStyle(.white)
-                        .padding(.horizontal, T.lg).padding(.vertical, 12)
-                        .background(Capsule().fill(palette.accent))
-                }
-                .fixedSize()
-                .disabled(working || input.trimmingCharacters(in: .whitespaces).isEmpty)
+        Group {
+            if let id = openThread, let thread = store.threads.first(where: { $0.id == id }) {
+                conversation(thread)
+            } else {
+                library
             }
         }
         .padding(.top, T.md)
+        .alert("Rename", isPresented: Binding(get: { renaming != nil },
+                                              set: { if !$0 { renaming = nil } })) {
+            TextField("Title", text: $newTitle)
+            Button("Save") { if let id = renaming { store.rename(id, to: newTitle) }; renaming = nil }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        }
+    }
+
+    // MARK: - The list
+
+    private var library: some View {
+        VStack(alignment: .leading, spacing: T.md) {
+            Button {
+                store.newThread()
+                openThread = store.currentID
+            } label: {
+                Text("New chat")
+                    .font(.system(size: T.small)).foregroundStyle(palette.bgElevated)
+                    .frame(maxWidth: .infinity).padding(.vertical, 10)
+                    .background(Capsule().fill(palette.accent))
+            }
+
+            if store.threads.isEmpty {
+                Text("No conversations yet. A chat here keeps its own thread — Home stays one "
+                     + "continuous conversation, these stay apart.")
+                    .font(.system(size: T.body)).foregroundStyle(palette.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, T.sm)
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(store.threads) { thread in
+                            Button { openThread = thread.id; store.currentID = thread.id } label: {
+                                row(thread)
+                            }
+                            Rectangle().fill(palette.hairline).frame(height: 1)
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+    }
+
+    private func row(_ thread: ChatStore.Thread) -> some View {
+        HStack(spacing: T.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(thread.displayTitle)
+                    .font(.system(size: T.body)).foregroundStyle(palette.ink)
+                    .lineLimit(1)
+                Text("\(thread.turns.count) message\(thread.turns.count == 1 ? "" : "s") · "
+                     + thread.updated.formatted(date: .abbreviated, time: .shortened))
+                    .font(.system(size: T.small)).foregroundStyle(palette.inkFaint)
+            }
+            Spacer()
+            Menu {
+                Button("Rename") { newTitle = thread.title; renaming = thread.id }
+                Button("Delete", role: .destructive) { store.delete(thread.id) }
+            } label: {
+                Image(systemName: "ellipsis").foregroundStyle(palette.inkSoft)
+                    .frame(width: 32, height: 32)
+            }
+        }
+        .padding(.vertical, T.sm)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - One conversation
+
+    private func conversation(_ thread: ChatStore.Thread) -> some View {
+        VStack(alignment: .leading, spacing: T.sm) {
+            HStack {
+                Button { openThread = nil } label: {
+                    Label(thread.displayTitle, systemImage: "chevron.left")
+                        .font(.system(size: T.body)).foregroundStyle(palette.inkSoft)
+                        .lineLimit(1)
+                }
+                Spacer()
+            }
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: T.md) {
+                        ForEach(thread.turns) { turn in
+                            if turn.role == "user" {
+                                Text(turn.text)
+                                    .font(.system(size: T.body)).foregroundStyle(palette.inkSoft)
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                                    .id(turn.id)
+                            } else {
+                                AnswerView(text: turn.text).id(turn.id)
+                            }
+                        }
+                        if working { SlyWaiting("thinking").id("waiting") }
+                    }
+                    .padding(.vertical, T.md)
+                }
+                .scrollIndicators(.hidden)
+                // Follow the conversation down as it grows, rather than leaving the newest reply
+                // below the fold where it reads as nothing having happened.
+                .onChange(of: thread.turns.count) { _, _ in
+                    withAnimation { proxy.scrollTo(thread.turns.last?.id, anchor: .bottom) }
+                }
+            }
+
+            composer
+        }
+    }
+
+    private var composer: some View {
+        HStack(spacing: T.sm) {
+            TextField("", text: $input, prompt:
+                Text("say something").foregroundStyle(palette.inkFaint))
+                .font(.system(size: T.body)).foregroundStyle(palette.ink)
+                .textFieldStyle(.plain)
+                .focused($focused)
+                .submitLabel(.send)
+                .onSubmit(send)
+                .padding(.horizontal, T.md).padding(.vertical, 12)
+                .background(RoundedRectangle(cornerRadius: 12).fill(palette.bgElevated.opacity(0.6)))
+            Button(action: send) {
+                Text("Send").font(.system(size: T.body)).foregroundStyle(.white)
+                    .padding(.horizontal, T.lg).padding(.vertical, 12)
+                    .background(Capsule().fill(palette.accent))
+            }
+            .fixedSize()
+            .disabled(working || input.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
     }
 
     private func send() {
         let said = input.trimmingCharacters(in: .whitespaces)
-        guard !said.isEmpty else { return }
+        guard !said.isEmpty, let id = openThread else { return }
         input = ""; working = true
-        turns.append((you: said, sly: ""))
-        let index = turns.count - 1
+
+        // Read before appending, so the question is not handed back as its own history.
+        store.currentID = id
+        let history = store.context()
+        store.append(role: "user", text: said)
 
         Task {
-            do { turns[index].sly = try await AgentClient.ask(said) }
-            catch { turns[index].sly = error.localizedDescription }
+            let reply: String
+            do { reply = try await AgentClient.ask(said, history: history) }
+            catch { reply = error.localizedDescription }
+            store.append(role: "assistant", text: reply)
+            // The brain keeps it too — a conversation that only lives in the chat list is not part
+            // of what SlyOS knows about you.
+            SlyStore.shared.insert(kind: "note", title: said, body: reply, source: "Chat")
             working = false
         }
     }

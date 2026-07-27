@@ -126,6 +126,8 @@ struct SettingsPanel: View {
                         }
                     }
 
+                    group("IS IT WORKING?", p: p) { SelfTestSection(palette: p) }
+
                     group("BRAIN", p: p) {
                         VStack(alignment: .leading, spacing: T.sm) {
                             HStack {
@@ -817,6 +819,97 @@ private struct ChatImportSection: View {
                     isError = true; note = error.localizedDescription; working = false
                 }
             }
+        }
+    }
+}
+
+
+/// Proof, rather than reassurance.
+///
+/// Every screen in this app is capable of looking fine while the thing behind it is broken — the
+/// brain shows a healthy count whether or not recall returns anything, and Google shows connected
+/// whether or not the token still refreshes. This runs the real calls and reports what came back.
+private struct SelfTestSection: View {
+    let palette: Palette
+    @State private var tester = SelfTest.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: T.sm) {
+            Text("Runs the real calls — a search against your brain, a question to a model, a "
+                 + "calendar read. Nothing is sent to anyone.")
+                .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                Task { await tester.run() }
+            } label: {
+                HStack(spacing: T.sm) {
+                    if tester.running { SlyWaiting("checking") }
+                    else { Text("Check everything").font(.system(size: T.body)) }
+                }
+                .foregroundStyle(palette.bgElevated)
+                .frame(maxWidth: .infinity).padding(.vertical, 12)
+                .background(Capsule().fill(palette.accent))
+            }
+            .disabled(tester.running)
+
+            if let when = tester.lastRun, !tester.checks.isEmpty {
+                Text(tester.failures == 0
+                     ? "Everything that is set up works · \(when.formatted(date: .omitted, time: .shortened))"
+                     : "\(tester.failures) failing · \(when.formatted(date: .omitted, time: .shortened))")
+                    .font(.system(size: T.small))
+                    .foregroundStyle(tester.failures == 0 ? palette.inkSoft : palette.danger)
+            }
+
+            ForEach(Array(Set(tester.checks.map(\.area))).sorted(), id: \.self) { area in
+                VStack(alignment: .leading, spacing: T.xs) {
+                    Text(area.uppercased())
+                        .font(.system(size: T.caption, weight: .bold)).tracking(1.5)
+                        .foregroundStyle(palette.inkFaint)
+                        .padding(.top, T.xs)
+                    ForEach(tester.checks.filter { $0.area == area }) { check in
+                        row(check)
+                    }
+                }
+            }
+        }
+    }
+
+    private func row(_ check: SelfTest.Check) -> some View {
+        HStack(alignment: .top, spacing: T.sm) {
+            Text(mark(check.result))
+                .font(.system(size: T.body, weight: .bold))
+                .foregroundStyle(tint(check.result))
+                .frame(width: 18, alignment: .leading)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(check.name).font(.system(size: T.small)).foregroundStyle(palette.ink)
+                Text(check.detail)
+                    .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            // Timing only where it was measured, so a fast check does not report a meaningless 0ms.
+            if check.ms > 50 {
+                Text("\(check.ms)ms")
+                    .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+            }
+        }
+        .padding(.vertical, 3)
+    }
+
+    private func mark(_ r: SelfTest.Result) -> String {
+        switch r {
+        case .pass: "✓"
+        case .fail: "✕"
+        case .skip: "–"
+        }
+    }
+
+    private func tint(_ r: SelfTest.Result) -> Color {
+        switch r {
+        case .pass: palette.accent
+        case .fail: palette.danger
+        case .skip: palette.inkFaint
         }
     }
 }

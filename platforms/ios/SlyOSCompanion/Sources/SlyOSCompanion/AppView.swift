@@ -76,6 +76,7 @@ struct HomePanel: View {
     @State private var showScanner = false
     @State private var showLook = false
     @State private var showPhotoPicker = false
+    @State private var showFilePicker = false
     @State private var pickedPhoto: PhotosPickerItem?
     @FocusState private var promptFocused: Bool
 
@@ -113,6 +114,26 @@ struct HomePanel: View {
                     thinking = true
                     answer = await ActionRouter.sendApproved(approved)
                     thinking = false
+                }
+            }
+        }
+        .fileImporter(isPresented: $showFilePicker,
+                      allowedContentTypes: DocImport.acceptedTypes,
+                      allowsMultipleSelection: true) { result in
+            guard let urls = try? result.get() else { return }
+            Task {
+                thinking = true; answer = ""; failure = nil
+                var pages = 0, files = 0
+                var problem: String?
+                for url in urls {
+                    let r = await DocImport.read(url)
+                    if let f = r.failed { problem = f } else { pages += r.pages; files += 1 }
+                }
+                thinking = false
+                if files == 0 { failure = problem ?? "Couldn't read that." }
+                else {
+                    answer = "Read \(files) \(files == 1 ? "file" : "files") — \(pages) "
+                        + "\(pages == 1 ? "page" : "pages") into your brain. Ask me about it."
                 }
             }
         }
@@ -186,10 +207,10 @@ struct HomePanel: View {
             }
             .layoutPriority(1)
 
-            Button { showPhotoPicker = true } label: {
+            Button { showFilePicker = true } label: {
                 Image(systemName: "paperclip").font(.system(size: 22)).foregroundStyle(p.inkSoft)
             }
-            .accessibilityLabel("Read a photo")
+            .accessibilityLabel("Read a file into your brain")
 
             Button { showLook = true } label: {
                 Image(systemName: "camera.fill").font(.system(size: 22)).foregroundStyle(p.inkSoft)
@@ -335,6 +356,10 @@ struct HomePanel: View {
         // Everything you tell SlyOS is kept. That is the whole premise, so it happens here rather
         // than only when a model round-trip succeeds.
         appState.remember(title: "", body: asked, source: "Home")
+
+        // The conversation so far, read *before* this turn is recorded — otherwise the question
+        // would appear in its own history and the model would be told it was asked twice.
+        let history = HomeChat.context()
         prompt = ""
         promptFocused = false
         answer = ""; failure = nil; thinking = true
@@ -352,6 +377,7 @@ struct HomePanel: View {
                         answer = "Made your \(kind.noun): **\(made.title)**\n\n\(made.url)"
                     }
                     thinking = false
+                    HomeChat.add(question: asked, answer: answer)
                     appState.remember(title: made.title, body: "\(kind.noun) — \(made.url)",
                                       source: "Google")
                     Outbox.shared.record(what: "Created a \(kind.noun)",
@@ -369,7 +395,7 @@ struct HomePanel: View {
                             message — no preamble, no "here's your message", no commentary. \
                             \(AgentClient.voiceBlock())
                             """,
-                        user: "WHAT YOU KNOW:\n\(AgentClient.corpus(for: asked))\n\nWRITE: \(asked)",
+                        user: "WHAT YOU KNOW:\n\(await AgentClient.corpus(for: asked))\n\nWRITE: \(asked)",
                         tier: .standard)
 
                     let outcome = await ActionRouter.perform(intent, draft: draft)
@@ -381,18 +407,20 @@ struct HomePanel: View {
                     } else {
                         answer = outcome.text
                     }
+                    HomeChat.add(question: asked, answer: outcome.text)
                     appState.remember(title: asked, body: draft, source: "Draft")
                     return
                 }
 
                 // Off the main actor: the network call is the whole reason the Android Memory tab
                 // used to fail with "-1 couldn't search".
-                let reply = try await AgentClient.ask(asked)
+                let reply = try await AgentClient.ask(asked, history: history)
                 // Nothing ran on this path, so nothing in the reply may imply otherwise.
                 answer = ActionRouter.correctIfItClaimed(reply)
                 thinking = false
                 // Keep the answer too, so the brain remembers what it told you.
                 appState.remember(title: asked, body: reply, source: "SlyOS")
+                HomeChat.add(question: asked, answer: answer)
             } catch {
                 failure = error.localizedDescription
                 thinking = false

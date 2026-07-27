@@ -18,9 +18,9 @@ final class SlyStore {
 
     static let shared = SlyStore()
 
-    // Not private: the backup extension in this file's module reads both.
-    fileprivate(set) var db: OpaquePointer?
-    fileprivate let queue = DispatchQueue(label: "com.belto.slyos.store")
+    // Not private: the backup extension and the vector store both read this handle.
+    internal(set) var db: OpaquePointer?
+    internal let queue = DispatchQueue(label: "com.belto.slyos.store")
 
     /// SQLite needs to know whether it may keep a borrowed pointer. Swift's `String` buffers are
     /// not guaranteed to outlive the call, so every text binding must be TRANSIENT (copy now).
@@ -223,6 +223,113 @@ final class SlyStore {
         }
     }
 
+    /// Everything that flowed through the brain inside a time window, newest first.
+    ///
+    /// "What did I do yesterday" cannot be answered by keyword search — the word "yesterday" appears
+    /// in none of the memories it should return. Dates need a date query.
+    func between(_ from: Date, _ to: Date, limit: Int = 60) -> [Memory] {
+        queue.sync {
+            var st: OpaquePointer?
+            let sql = """
+                SELECT id, kind, person, title, body, source, ts FROM memories
+                WHERE ts >= ? AND ts < ? ORDER BY ts DESC LIMIT ?;
+                """
+            guard sqlite3_prepare_v2(db, sql, -1, &st, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(st) }
+            // Bound as integers. SQLite's type affinity sorts every integer below every string, so a
+            // timestamp bound as text compares as text and the window silently returns nothing.
+            sqlite3_bind_int64(st, 1, Int64(from.timeIntervalSince1970))
+            sqlite3_bind_int64(st, 2, Int64(to.timeIntervalSince1970))
+            sqlite3_bind_int(st, 3, Int32(limit))
+            return rows(from: st)
+        }
+    }
+
+    /// The most recent things the owner *sent*, optionally on one platform.
+    ///
+    /// Answers "who did I email last?", which keyword search gets wrong every time: it matches the
+    /// word "email" in message bodies rather than looking at who was written to and when.
+    func recentSent(limit: Int = 8, platform: String? = nil) -> [Memory] {
+        queue.sync {
+            var st: OpaquePointer?
+            // Importers mark the owner's own half of a thread as "WhatsApp (sent)", "Gmail (sent)"…
+            var sql = """
+                SELECT id, kind, person, title, body, source, ts FROM memories
+                WHERE source LIKE '%(sent)%'
+                """
+            if platform != nil { sql += " AND source LIKE ?" }
+            sql += " ORDER BY ts DESC LIMIT ?;"
+
+            guard sqlite3_prepare_v2(db, sql, -1, &st, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(st) }
+            var index: Int32 = 1
+            if let platform {
+                sqlite3_bind_text(st, index, "%\(platform)%", -1, Self.transient); index += 1
+            }
+            sqlite3_bind_int(st, index, Int32(limit))
+            return rows(from: st)
+        }
+    }
+
+    /// What the brain knows about one person: how much, how recently, and the last few exchanges.
+    ///
+    /// This is what turned "who is Carlos?" from eight fragments of small talk into an answer — the
+    /// shape of a relationship is a count and a span, not a pile of individual lines.
+    func dossier(person: String, limit: Int = 6) -> (total: Int, first: Date?, last: Date?, lines: [Memory]) {
+        let name = person.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard name.count > 1 else { return (0, nil, nil, []) }
+
+        return queue.sync {
+            var st: OpaquePointer?
+            let stats = "SELECT COUNT(*), MIN(ts), MAX(ts) FROM memories WHERE person LIKE ?;"
+            var total = 0
+            var first: Date?
+            var last: Date?
+            if sqlite3_prepare_v2(db, stats, -1, &st, nil) == SQLITE_OK {
+                sqlite3_bind_text(st, 1, "%\(name)%", -1, Self.transient)
+                if sqlite3_step(st) == SQLITE_ROW {
+                    total = Int(sqlite3_column_int64(st, 0))
+                    if sqlite3_column_type(st, 1) != SQLITE_NULL {
+                        first = Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(st, 1)))
+                        last = Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(st, 2)))
+                    }
+                }
+            }
+            sqlite3_finalize(st)
+            guard total > 0 else { return (0, nil, nil, []) }
+
+            st = nil
+            let recent = """
+                SELECT id, kind, person, title, body, source, ts FROM memories
+                WHERE person LIKE ? ORDER BY ts DESC LIMIT ?;
+                """
+            guard sqlite3_prepare_v2(db, recent, -1, &st, nil) == SQLITE_OK else {
+                return (total, first, last, [])
+            }
+            defer { sqlite3_finalize(st) }
+            sqlite3_bind_text(st, 1, "%\(name)%", -1, Self.transient)
+            sqlite3_bind_int(st, 2, Int32(limit))
+            return (total, first, last, rows(from: st))
+        }
+    }
+
+    /// Names the brain actually holds, for resolving who a question is about.
+    func knownPeople(limit: Int = 400) -> [String] {
+        queue.sync {
+            var st: OpaquePointer?
+            let sql = """
+                SELECT person, COUNT(*) c FROM memories WHERE person <> ''
+                GROUP BY person ORDER BY c DESC LIMIT ?;
+                """
+            guard sqlite3_prepare_v2(db, sql, -1, &st, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(st) }
+            sqlite3_bind_int(st, 1, Int32(limit))
+            var out: [String] = []
+            while sqlite3_step(st) == SQLITE_ROW { out.append(Self.text(st, 0)) }
+            return out
+        }
+    }
+
     private func rows(from st: OpaquePointer?) -> [Memory] {
         var out: [Memory] = []
         while sqlite3_step(st) == SQLITE_ROW {
@@ -331,6 +438,34 @@ extension SlyStore {
             defer { sqlite3_finalize(st) }
             sqlite3_bind_int64(st, 1, id)
             sqlite3_step(st)
+        }
+    }
+}
+
+
+extension SlyStore {
+    /// Fetch specific memories by id, for the vector path.
+    func byIDs(_ ids: [Int64]) -> [Memory] {
+        guard !ids.isEmpty else { return [] }
+        return queue.sync {
+            let list = ids.map(String.init).joined(separator: ",")
+            var st: OpaquePointer?
+            let sql = "SELECT id, kind, person, title, body, source, ts FROM memories WHERE id IN (\(list));"
+            guard sqlite3_prepare_v2(db, sql, -1, &st, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(st) }
+
+            var found: [Int64: Memory] = [:]
+            while sqlite3_step(st) == SQLITE_ROW {
+                func text(_ c: Int32) -> String {
+                    sqlite3_column_text(st, c).map { String(cString: $0) } ?? ""
+                }
+                let id = sqlite3_column_int64(st, 0)
+                found[id] = Memory(id: id, kind: text(1), person: text(2), title: text(3),
+                                   body: text(4), source: text(5),
+                                   date: Date(timeIntervalSince1970: TimeInterval(sqlite3_column_int64(st, 6))))
+            }
+            // Returned in the order asked for, because that order is the ranking.
+            return ids.compactMap { found[$0] }
         }
     }
 }
