@@ -312,6 +312,13 @@ enum ActionRouter {
             guard GoogleAuth.shared.isConnected else {
                 return Outcome(text: notConnected("Google", draft: draft), didSomething: false)
             }
+            // Anything that is not "create" goes to the flow layer. The API could already move,
+            // cancel, invite, un-invite and add a Meet — none of it was reachable, because this
+            // branch only ever created, so every one of those requests fell through to prose that
+            // described the action instead of doing it.
+            if let verb = CalendarFlows.verb(in: intent.instruction), verb != .create {
+                return await runFlow(verb, intent: intent, draft: draft)
+            }
             guard let slot = when(in: intent.instruction) else {
                 return Outcome(text: "**Nothing created** — I need a time. Say when, and I'll make "
                                + "the event and send the invite.", didSomething: false)
@@ -494,5 +501,171 @@ enum ActionRouter {
             if let m = memory.body.firstMatch(#"[\w.+-]+@[\w-]+\.[\w.]+"#) { return m[0] }
         }
         return nil
+    }
+}
+
+// MARK: - Calendar flows
+
+extension ActionRouter {
+
+    /// Everything a calendar request can be, other than making a new event.
+    ///
+    /// Every branch names the event it touched and the date it touched, because "moved it" is
+    /// unverifiable and the wrong meeting moved is a meeting somebody misses. Where the request
+    /// matches more than one event, nothing happens and it asks — an assistant that guesses and
+    /// then cancels has done something the owner cannot undo.
+    static func runFlow(_ verb: CalendarFlows.Verb, intent: Intent, draft: String) async -> Outcome {
+        let match = await CalendarFlows.find(intent.instruction)
+        let event: GoogleCalendar.Event
+        switch match {
+        case .one(let e): event = e
+        case .many(let list): return Outcome(text: CalendarFlows.ambiguous(list), didSomething: false)
+        case .none:
+            return Outcome(text: "**Nothing changed** — I couldn't find an event matching that in "
+                           + "the next month.", didSomething: false)
+        }
+
+        let when = event.start?.formatted(date: .abbreviated, time: .shortened) ?? "no time set"
+
+        do {
+            switch verb {
+            case .create:
+                return Outcome(text: "", didSomething: false)   // handled by the caller
+
+            case .move:
+                guard let slot = Self.when(in: intent.instruction) else {
+                    return Outcome(text: "**Not moved** — I need a new time. Try \"move it to "
+                                   + "Thursday at 3\".", didSomething: false)
+                }
+                let length = (event.end ?? Date()).timeIntervalSince(event.start ?? Date())
+                // The original length is preserved unless a new end was actually stated. A "move"
+                // that quietly turns a two-hour workshop into 30 minutes is a wrong answer.
+                let end = slot.end > slot.start.addingTimeInterval(60)
+                    ? slot.end : slot.start.addingTimeInterval(max(length, 1_800))
+                let updated = try await GoogleCalendar.patch(id: event.id, start: slot.start, end: end)
+                Activity.record(.scheduled, "moved \(updated.title)",
+                                detail: "was \(when), now \(slot.start.formatted(date: .abbreviated, time: .shortened))")
+                return Outcome(text: "Moved **\(updated.title)** from \(when) to "
+                               + "\(slot.start.formatted(date: .abbreviated, time: .shortened))."
+                               + (event.attendees.isEmpty ? "" : " Everyone invited has been told."),
+                               didSomething: true)
+
+            case .cancel:
+                try await GoogleCalendar.delete(id: event.id)
+                Activity.record(.scheduled, "cancelled \(event.title)", detail: when)
+                return Outcome(text: "Cancelled **\(event.title)** (\(when))."
+                               + (event.attendees.isEmpty ? "" : " Attendees have been notified."),
+                               didSomething: true)
+
+            case .invite:
+                let emails = Self.emails(in: intent.instruction)
+                guard !emails.isEmpty else {
+                    return Outcome(text: "**Nobody added** — I need an email address for them.",
+                                   didSomething: false)
+                }
+                let updated = try await GoogleCalendar.patch(id: event.id, addAttendees: emails)
+                Activity.record(.sent, "invited \(emails.joined(separator: ", "))",
+                                detail: "to \(updated.title)")
+                return Outcome(text: "Added \(emails.joined(separator: ", ")) to "
+                               + "**\(updated.title)** (\(when)). The invitation has gone out.",
+                               didSomething: true)
+
+            case .uninvite:
+                let emails = Self.emails(in: intent.instruction)
+                let named = emails.isEmpty
+                    ? event.attendees.map(\.email).filter {
+                        intent.instruction.lowercased().contains($0.prefix(while: { $0 != "@" }).lowercased())
+                      }
+                    : emails
+                guard !named.isEmpty else {
+                    return Outcome(text: "**Nobody removed** — I couldn't tell who. Currently "
+                                   + "invited: \(event.attendees.map(\.email).joined(separator: ", ")).",
+                                   didSomething: false)
+                }
+                let updated = try await GoogleCalendar.removeAttendees(id: event.id, emails: named)
+                Activity.record(.scheduled, "removed \(named.joined(separator: ", "))",
+                                detail: "from \(updated.title)")
+                return Outcome(text: "Took \(named.joined(separator: ", ")) off "
+                               + "**\(updated.title)** (\(when)).", didSomething: true)
+
+            case .addMeet:
+                let updated = try await GoogleCalendar.patch(id: event.id, addMeet: true)
+                guard !updated.meetLink.isEmpty else {
+                    return Outcome(text: "**No Meet link** — Google didn't attach one. It sometimes "
+                                   + "refuses on events it didn't create.", didSomething: false)
+                }
+                Activity.record(.scheduled, "added a Meet link", detail: updated.title)
+                return Outcome(text: "Added a Meet link to **\(updated.title)** (\(when)).\n\n"
+                               + updated.meetLink, didSomething: true)
+
+            case .rename:
+                let title = Self.title(from: intent.instruction)
+                guard !title.isEmpty else {
+                    return Outcome(text: "**Not renamed** — I couldn't tell what to call it.",
+                                   didSomething: false)
+                }
+                let updated = try await GoogleCalendar.patch(id: event.id, title: title)
+                return Outcome(text: "Renamed it to **\(updated.title)** (\(when)).",
+                               didSomething: true)
+
+            case .agenda:
+                // The draft is the agenda — it was written from the brain before this ran.
+                let updated = try await GoogleCalendar.patch(id: event.id, description: draft)
+                Activity.record(.scheduled, "added an agenda", detail: updated.title)
+                return Outcome(text: "Added the agenda to **\(updated.title)** (\(when)). Everyone "
+                               + "invited can see it.\n\n\(draft)", didSomething: true)
+
+            case .whoIsComing:
+                guard !event.attendees.isEmpty else {
+                    return Outcome(text: "**\(event.title)** (\(when)) has nobody invited — the "
+                                   + "attendee list is empty, so no invitation was ever sent.",
+                                   didSomething: false)
+                }
+                let lines = event.attendees.map { a -> String in
+                    let state = switch a.responseStatus {
+                    case "accepted": "accepted"
+                    case "declined": "**declined**"
+                    case "tentative": "maybe"
+                    default: "no reply yet"
+                    }
+                    return "· \(a.email) — \(state)"
+                }.joined(separator: "\n")
+                return Outcome(text: "**\(event.title)** — \(when)\n\n\(lines)", didSomething: false)
+
+            case .chase, .brief, .followUp:
+                let targets = verb == .chase
+                    ? event.awaitingReply.map(\.email)
+                    : event.attendees.filter { !$0.organizer }.map(\.email)
+                guard !targets.isEmpty else {
+                    return Outcome(text: verb == .chase
+                                   ? "Nobody to chase — everyone invited to **\(event.title)** has replied."
+                                   : "**\(event.title)** has nobody invited to write to.",
+                                   didSomething: false)
+                }
+                // Outbound mail is always read and approved first, however routine it looks.
+                return Outcome(
+                    text: "",
+                    didSomething: false,
+                    confirm: ConfirmSend.Payload(
+                        recipient: targets.joined(separator: ", "),
+                        subject: verb == .followUp ? "Following up — \(event.title)" : event.title,
+                        body: draft,
+                        action: verb == .chase
+                            ? "Chase \(targets.count) who haven't replied"
+                            : "Email \(targets.count) about \(event.title)"))
+            }
+        } catch {
+            return Outcome(text: "**Nothing changed** — \(error.localizedDescription)",
+                           didSomething: false)
+        }
+    }
+
+    /// Email addresses written out in the request.
+    static func emails(in text: String) -> [String] {
+        let pattern = #"[\w.+-]+@[\w-]+\.[\w.]+"#
+        guard let re = try? NSRegularExpression(pattern: pattern) else { return [] }
+        return re.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+            Range($0.range, in: text).map { String(text[$0]) }
+        }
     }
 }

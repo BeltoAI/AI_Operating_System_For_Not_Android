@@ -136,6 +136,25 @@ enum GoogleCalendar {
         return parse(json)
     }
 
+    /// Take people off an invitation.
+    ///
+    /// `patch` merges attendees, so it can only ever add — there was no way to un-invite anyone,
+    /// and "actually don't include Rana" silently left Rana on the invitation. Removal has to read
+    /// the list, subtract, and write the whole thing back, because the API replaces the array
+    /// wholesale rather than diffing it.
+    @discardableResult
+    static func removeAttendees(id: String, emails: [String], notify: Bool = true) async throws -> Event {
+        let dropping = Set(emails.map { $0.lowercased() })
+        let keeping = try await get(id).attendees
+            .filter { !dropping.contains($0.email.lowercased()) }
+            .map { ["email": $0.email] }
+
+        let json = try await request("PATCH",
+            "\(base)/\(id)?sendUpdates=\(notify ? "all" : "none")",
+            body: ["attendees": keeping])
+        return parse(json)
+    }
+
     /// Cancel an event. Attendees are told by default — a silent cancellation strands everyone.
     static func delete(id: String, notify: Bool = true) async throws {
         _ = try await request("DELETE", "\(base)/\(id)?sendUpdates=\(notify ? "all" : "none")")
