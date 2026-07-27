@@ -65,6 +65,37 @@ final class NowFeed {
             }
         }
 
+        // GOOGLE CALENDAR, READ DIRECTLY.
+        //
+        // EventKit only sees calendars the phone itself subscribes to. SlyOS creates events through
+        // the Google API, so unless the owner has also added that Google account under iOS Settings
+        // → Calendar, it was writing to a calendar it could not read back — "block my calendar at
+        // six" succeeded and "what's on today?" answered nothing, which reads as the app lying
+        // about what it did.
+        if GoogleAuth.shared.isConnected {
+            let end = Calendar.current.date(byAdding: .day, value: 2, to: .now) ?? .now
+            if let google = try? await GoogleCalendar.find(to: end, max: 25) {
+                // The same event can arrive twice when the account is BOTH synced to the phone and
+                // read from the API. Matched on title and start rather than on id, because the two
+                // sources give the same meeting different identifiers.
+                let already = Set(found.map { "\($0.title)|\($0.when?.timeIntervalSince1970 ?? 0)" })
+                for e in google {
+                    guard let start = e.start else { continue }
+                    let key = "\(e.title)|\(start.timeIntervalSince1970)"
+                    guard !already.contains(key) else { continue }
+                    var bits = [start.formatted(date: .omitted, time: .shortened)]
+                    if !Calendar.current.isDateInToday(start) { bits.append("tomorrow") }
+                    if !e.attendees.isEmpty {
+                        bits.append("with " + e.attendees.map(\.email).joined(separator: ", "))
+                    }
+                    if !e.meetLink.isEmpty { bits.append("Meet") }
+                    found.append(Item(id: e.id, title: e.title,
+                                      detail: bits.joined(separator: " · "),
+                                      when: start, kind: .event))
+                }
+            }
+        }
+
         if remindersOK {
             let predicate = store.predicateForIncompleteReminders(
                 withDueDateStarting: nil,

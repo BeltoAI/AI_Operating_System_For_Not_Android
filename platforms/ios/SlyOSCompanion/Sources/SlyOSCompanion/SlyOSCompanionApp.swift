@@ -14,10 +14,24 @@ struct SlyOSCompanionApp: App {
             let feed = await NowFeed()
             await feed.load()
             let items = await feed.items
-            guard !items.isEmpty else { return "Nothing on for the next two days." }
-            return items.prefix(15)
-                .map { "· \($0.title) — \($0.detail)" }
-                .joined(separator: "\n")
+
+            // Never return nil or empty. An empty agenda block means no block at all, and the model
+            // then answers a calendar question from general knowledge — "I don't have access to your
+            // calendar" — while sitting on a granted permission and a connected Google account. An
+            // empty calendar and an unreachable one are different answers and have different fixes,
+            // so the block says which.
+            guard items.isEmpty else {
+                return items.prefix(15)
+                    .map { "· \($0.title) — \($0.detail)" }
+                    .joined(separator: "\n")
+            }
+            if let blocked = await feed.blocked { return "CANNOT BE READ: \(blocked)" }
+            if await !GoogleAuth.shared.isConnected {
+                return "Nothing on the phone's own calendar for the next two days. Google is NOT "
+                    + "connected, so any Google Calendar events are invisible — say so, and say "
+                    + "they can connect it in Settings."
+            }
+            return "Nothing on for the next two days — the calendar was read and it is genuinely empty."
         }
         // Same reason: ModelRouter is shared with the extension, which carries no gateway client.
         ModelRouter.openClaw = (baseURL: { OpenClaw.shared.baseURL },

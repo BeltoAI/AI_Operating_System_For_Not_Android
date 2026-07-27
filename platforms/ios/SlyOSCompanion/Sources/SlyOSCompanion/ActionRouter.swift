@@ -17,6 +17,8 @@ enum ActionRouter {
         case telegram(to: String)
         case sms(to: String)
         case calendar
+        case task
+        case timer
         case unknown
 
         /// Whether this phone can complete it without a human.
@@ -28,6 +30,9 @@ enum ActionRouter {
             case .whatsapp, .telegram:
                 OpenClaw.shared.isConfigured && OpenClaw.shared.allowActions
             // iOS can open Messages pre-filled, but the human still taps send.
+            // Both are on-device and need no account, which is the point of them: they work on a
+            // phone with no API key and no Google connected at all.
+            case .task, .timer: true
             case .sms, .unknown: false
             }
         }
@@ -39,6 +44,8 @@ enum ActionRouter {
             case .telegram: "Telegram"
             case .sms: "Messages"
             case .calendar: "your calendar"
+            case .task: "your list"
+            case .timer: "a timer"
             case .unknown: "that"
             }
         }
@@ -69,6 +76,18 @@ enum ActionRouter {
             return Intent(channel: .calendar, recipient: recipient, instruction: prompt)
         }
 
+        // Timers before tasks. "Remind me in 20 minutes" is a timer, and it contains "remind me" —
+        // routed to the list it would sit there silently, which is the opposite of what was asked.
+        if p.contains("timer") || (p.contains("remind me in") && Timers.duration(in: p) != nil) {
+            return Intent(channel: .timer, recipient: "", instruction: prompt)
+        }
+        let taskWords = ["remind me", "add to my list", "add to the list", "put on my list",
+                         "to-do", "todo", "to do list", "don't let me forget", "dont let me forget",
+                         "remember to"]
+        if taskWords.contains(where: p.contains) {
+            return Intent(channel: .task, recipient: "", instruction: prompt)
+        }
+
         let verbs = ["send", "message", "write to", "text ", "email", "reply to", "tell ", "dm "]
         guard verbs.contains(where: p.contains) else { return nil }
 
@@ -79,6 +98,43 @@ enum ActionRouter {
             return Intent(channel: .sms(to: recipient), recipient: recipient, instruction: prompt)
         }
         return nil
+    }
+
+    /// What to actually put on the list.
+    ///
+    /// Everything after the asking phrase, with the leading "to" gone — "remind me to call the vet"
+    /// is the task "call the vet", not "to call the vet".
+    private static func taskText(_ prompt: String) -> String {
+        var text = prompt
+        for opener in ["don't let me forget to", "dont let me forget to", "don't let me forget",
+                       "dont let me forget", "remind me to", "remind me", "remember to",
+                       "add to my list", "add to the list", "put on my list", "todo", "to-do"] {
+            if let range = text.range(of: opener, options: [.caseInsensitive]) {
+                text = String(text[range.upperBound...])
+                break
+            }
+        }
+        // A trailing time belongs to the due date, not to the words on the list.
+        for tail in [" at ", " tomorrow", " today", " tonight", " this evening", " in the morning"] {
+            if let range = text.range(of: tail, options: [.caseInsensitive, .backwards]) {
+                text = String(text[..<range.lowerBound])
+            }
+        }
+        return text
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ,.:;-–—"))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// What the timer is for, when they said — "timer for the pasta" reads better than "Timer".
+    private static func timerLabel(_ prompt: String) -> String {
+        guard let range = prompt.range(of: "for the ", options: [.caseInsensitive]) else {
+            return "Timer"
+        }
+        let rest = prompt[range.upperBound...]
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ,.:;"))
+        // "for the pasta" is a label; "for the next 10 minutes" is the duration said again.
+        guard !rest.isEmpty, Timers.duration(in: rest) == nil else { return "Timer" }
+        return rest.prefix(1).uppercased() + rest.dropFirst().prefix(40)
     }
 
     /// Best guess at who is being addressed — the word after "to", or a capitalised name.
@@ -254,6 +310,44 @@ enum ActionRouter {
                                      outcome: "failed")
                 return Outcome(text: "**Not created** — \(error.localizedDescription)", didSomething: false)
             }
+
+        case .timer:
+            guard let seconds = Timers.duration(in: intent.instruction) else {
+                return Outcome(text: "**No timer set** — I couldn't tell how long for. Try "
+                               + "\"set a timer for 10 minutes\".", didSomething: false)
+            }
+            guard let fires = await Timers.set(seconds, label: timerLabel(intent.instruction)) else {
+                return Outcome(text: "**No timer set** — SlyOS needs permission to send "
+                               + "notifications, or nothing can go off. Turn it on in Settings.",
+                               didSomething: false)
+            }
+            Outbox.shared.record(what: "Timer — \(Timers.phrase(seconds))",
+                                 detail: "goes off \(fires.formatted(date: .omitted, time: .shortened))",
+                                 outcome: "sent")
+            // The duration is read back deliberately. A misheard "fifteen" for "fifty" is only ever
+            // caught here — by the time it fails to go off, whatever it was for is over.
+            return Outcome(text: "Timer set for **\(Timers.phrase(seconds))** — goes off at "
+                           + "\(fires.formatted(date: .omitted, time: .shortened)).",
+                           didSomething: true)
+
+        case .task:
+            let what = taskText(intent.instruction)
+            guard !what.isEmpty else {
+                return Outcome(text: "**Nothing added** — I couldn't tell what to put on the list.",
+                               didSomething: false)
+            }
+            let due = Self.when(in: intent.instruction)?.start
+            guard await Tasks.shared.add(what, due: due) else {
+                return Outcome(text: "**Nothing added** — SlyOS needs access to Reminders. Turn it "
+                               + "on in Settings.", didSomething: false)
+            }
+            Outbox.shared.record(what: "Added to your list", detail: what, outcome: "sent")
+            var text = "Added **\(what)** to your list."
+            if let due {
+                text += " I'll remind you at \(due.formatted(date: .abbreviated, time: .shortened))."
+            }
+            text += "\n\nIt's in your Reminders, so it's on your Mac and Watch too."
+            return Outcome(text: text, didSomething: true)
 
         case .sms, .unknown:
             return Outcome(text: cannotSend(intent.channel, to: intent.recipient, draft: draft),

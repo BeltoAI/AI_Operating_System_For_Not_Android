@@ -64,6 +64,12 @@ final class GoogleAuth: NSObject {
         connectedEmail = keychain.string(for: "email")
     }
 
+    /// Why the last connection ended, when Google ended it rather than the owner. Shown in Settings
+    /// so a silent expiry reads as an explanation instead of as a broken integration.
+    private(set) var disconnectReason: String?
+
+    func clearDisconnectReason() { disconnectReason = nil }
+
     // MARK: - Sign in
 
     enum AuthError: LocalizedError {
@@ -76,7 +82,22 @@ final class GoogleAuth: NSObject {
             case .cancelled:
                 "Sign-in was cancelled."
             case .denied(let why):
-                "Google refused the sign-in: \(why)"
+                // access_denied is not the owner changing their mind — it is Google refusing, and
+                // the usual cause is a consent screen still in Testing, where only listed accounts
+                // may sign in. A tester told "cancelled or denied" concludes the app is broken and
+                // stops, because nothing they can do on their phone will change it.
+                switch why {
+                case "access_denied":
+                    "Google blocked this sign-in. SlyOS is still going through Google's review, so "
+                    + "only approved testers can connect for now. Send the email address you use "
+                    + "for Google to whoever gave you SlyOS and they can add you — nothing is wrong "
+                    + "with your phone or with the app."
+                case "admin_policy_enforced":
+                    "Your Google Workspace administrator blocks third-party apps on this account. "
+                    + "A personal Gmail account will connect fine."
+                default:
+                    "Google sign-in didn't complete (\(why))."
+                }
             case .badResponse(let code, _):
                 "Couldn't finish sign-in (\(code))."
             case .malformed:
@@ -181,11 +202,26 @@ final class GoogleAuth: NSObject {
             return current
         }
 
-        let json = try await post(Self.tokenEndpoint, form: [
-            "client_id": clientID,
-            "refresh_token": refresh,
-            "grant_type": "refresh_token"
-        ])
+        let json: [String: Any]
+        do {
+            json = try await post(Self.tokenEndpoint, form: [
+                "client_id": clientID,
+                "refresh_token": refresh,
+                "grant_type": "refresh_token"
+            ])
+        } catch let AuthError.badResponse(code, body) where body.contains("invalid_grant") {
+            // The refresh token is dead — revoked, or expired because the consent screen is still
+            // in Testing, where Google kills them after seven days.
+            //
+            // Keeping it stored is what makes this look like a bug in SlyOS: `isConnected` keeps
+            // saying yes, Settings keeps saying Connected, and every mail and calendar call quietly
+            // fails. A week after connecting, the app appears to forget how to reach Google while
+            // insisting it is signed in. Better to be honestly disconnected, and say why.
+            signOut()
+            disconnectReason = "Google signed you out. While SlyOS is in Google's review process, "
+                + "connections expire after 7 days — tap Connect again."
+            throw AuthError.badResponse(code, body)
+        }
         guard let access = json["access_token"] as? String else { throw AuthError.malformed }
         keychain.set(access, for: "access_token")
         let expiresIn = (json["expires_in"] as? Double) ?? 3600

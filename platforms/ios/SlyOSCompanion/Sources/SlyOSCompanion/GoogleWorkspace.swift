@@ -39,6 +39,55 @@ enum GoogleWorkspace {
         "rgbColor": ["red": 232.0 / 255, "green": 100.0 / 255, "blue": 44.0 / 255]
     ]
 
+
+    // MARK: - Where everything lands
+
+    /// The SlyOS folder in the owner's Drive, made once.
+    ///
+    /// Docs, Sheets and Slides are otherwise created loose in the root of My Drive, mixed in with
+    /// everything the owner made themselves. After a fortnight of use that is dozens of files with
+    /// no way to tell which came from here, and no way to find the deck from last Tuesday. One
+    /// folder makes the whole output of the app browsable, shareable and deletable as a unit.
+    ///
+    /// `drive.file` only ever sees files this app created, so the search below can never match a
+    /// folder of the owner's that happens to share the name.
+    private static var cachedFolderID: String?
+
+    static func folderID() async -> String? {
+        if let cachedFolderID { return cachedFolderID }
+
+        let query = "mimeType='application/vnd.google-apps.folder' and name='SlyOS' and trashed=false"
+        var components = URLComponents(string: "https://www.googleapis.com/drive/v3/files")!
+        components.queryItems = [.init(name: "q", value: query),
+                                 .init(name: "fields", value: "files(id)")]
+
+        if let found = try? await request("GET", components.url!.absoluteString),
+           let files = found["files"] as? [[String: Any]],
+           let id = files.first?["id"] as? String {
+            cachedFolderID = id
+            return id
+        }
+
+        let made = try? await request("POST", "https://www.googleapis.com/drive/v3/files",
+                                      body: ["name": "SlyOS",
+                                             "mimeType": "application/vnd.google-apps.folder"])
+        cachedFolderID = made?["id"] as? String
+        return cachedFolderID
+    }
+
+    /// Move a newly-created file into the SlyOS folder.
+    ///
+    /// Docs, Sheets and Slides are created by their own APIs, which offer nowhere to say where the
+    /// file should live — so it is created in the root and moved afterwards. A failure here is
+    /// deliberately silent: a document in the wrong folder is still a document, and refusing to
+    /// return it because the tidying failed would be worse than untidy.
+    private static func fileInFolder(_ fileID: String) async {
+        guard let folder = await folderID() else { return }
+        let url = "https://www.googleapis.com/drive/v3/files/\(fileID)?addParents=\(folder)"
+            + "&removeParents=root&fields=id"
+        _ = try? await request("PATCH", url)
+    }
+
     // MARK: - Docs
 
     /// A styled document from markdown-ish text.
@@ -84,6 +133,9 @@ enum GoogleWorkspace {
                 "https://docs.googleapis.com/v1/documents/\(id):batchUpdate",
                 body: ["requests": requests])
         }
+        // Filed before returning, so the link handed back already points at something in
+        // the SlyOS folder rather than loose in the root of My Drive.
+        await fileInFolder(id)
         return Made(id: id, url: "https://docs.google.com/document/d/\(id)/edit", title: title)
     }
 
@@ -118,6 +170,9 @@ enum GoogleWorkspace {
                     ]]
                 ]])
         }
+        // Filed before returning, so the link handed back already points at something in
+        // the SlyOS folder rather than loose in the root of My Drive.
+        await fileInFolder(id)
         return Made(id: id, url: "https://docs.google.com/spreadsheets/d/\(id)/edit", title: title)
     }
 
@@ -180,14 +235,19 @@ enum GoogleWorkspace {
                 "https://slides.googleapis.com/v1/presentations/\(id):batchUpdate",
                 body: ["requests": requests])
         }
+        // Filed before returning, so the link handed back already points at something in
+        // the SlyOS folder rather than loose in the root of My Drive.
+        await fileInFolder(id)
         return Made(id: id, url: "https://docs.google.com/presentation/d/\(id)/edit", title: title)
     }
 
     // MARK: - Plumbing
 
     @discardableResult
+    /// `body` defaults to empty so a GET, or a PATCH whose whole payload is in the query string,
+    /// can call this without inventing one.
     private static func request(_ method: String, _ url: String,
-                                body: [String: Any]) async throws -> [String: Any] {
+                                body: [String: Any] = [:]) async throws -> [String: Any] {
         guard GoogleAuth.shared.isConnected else { throw WorkspaceError.notConnected }
         let token = try await GoogleAuth.shared.accessToken()
 
@@ -196,7 +256,10 @@ enum GoogleWorkspace {
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 60
-        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        // A GET with a body is rejected outright by some Google endpoints.
+        if !body.isEmpty || method == "POST" {
+            req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
 
         let (data, response) = try await URLSession.shared.data(for: req)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0

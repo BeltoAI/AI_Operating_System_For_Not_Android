@@ -424,10 +424,19 @@ private struct GoogleSection: View {
             } else if auth.isConnected {
                 connected
             } else {
-                Text("Connect Google for calendar invites with real Meet links, and to back your "
-                     + "brain up to your own Drive.")
+                // Why the last connection ended, when Google ended it rather than the owner. A
+                // token that expired on Google's seven-day testing clock otherwise looks exactly
+                // like the app having forgotten how to sign in.
+                if let reason = auth.disconnectReason {
+                    Text(reason)
+                        .font(.system(size: T.caption)).foregroundStyle(palette.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("One sign-in switches on four things. Without it, SlyOS still remembers "
+                     + "everything and drafts everything — it just can't send or create.")
                     .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
                     .fixedSize(horizontal: false, vertical: true)
+                services(connected: false)
                 pill("Connect Google") { connect() }
             }
 
@@ -454,8 +463,11 @@ private struct GoogleSection: View {
                     .font(.system(size: 16)).foregroundStyle(palette.good)
             }
 
-            Text("Backups use the drive.file scope, so SlyOS can only ever see the one file it "
-                 + "created — never the rest of your Drive.")
+            services(connected: true)
+
+            Text("Backups use the drive.file scope, so SlyOS can only ever see the files it made "
+                 + "itself — never the rest of your Drive. Everything it creates goes into a "
+                 + "folder called SlyOS.")
                 .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -479,6 +491,37 @@ private struct GoogleSection: View {
             }
             .disabled(backup.working)
         }
+    }
+
+    /// What the one sign-in actually turns on.
+    ///
+    /// "Connected" on its own tells you nothing about why mail isn't appearing. Naming each service
+    /// makes the state legible: four ticks, or four greys and a reason.
+    private func services(connected: Bool) -> some View {
+        let rows = [("envelope.fill", "Gmail", "reads what needs a reply, drafts it, sends what you approve"),
+                    ("calendar", "Calendar", "real events, invitations and Meet links"),
+                    ("doc.text.fill", "Docs, Sheets & Slides", "made from a prompt, in your Drive"),
+                    ("arrow.clockwise.icloud.fill", "Drive backup", "your whole brain, in your own account")]
+        return VStack(alignment: .leading, spacing: 6) {
+            ForEach(rows, id: \.1) { icon, name, what in
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: connected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 13))
+                        .foregroundStyle(connected ? palette.good : palette.inkFaint)
+                    Image(systemName: icon)
+                        .font(.system(size: 12)).foregroundStyle(palette.inkSoft)
+                        .frame(width: 18)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(name).font(.system(size: T.small))
+                            .foregroundStyle(connected ? palette.ink : palette.inkSoft)
+                        Text(what).font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     private var backupLine: String {
