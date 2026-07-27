@@ -46,6 +46,8 @@
 	<string>SlyOS reads and writes reminders only for reminder workflows you explicitly request.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>SlyOS transcribes speech only after you tap the voice control.</string>
+	<key>NetlifyToken</key>
+	<string>$(NETLIFY_TOKEN)</string>
 	<key>SupabaseAnonKey</key>
 	<string>$(SUPABASE_ANON_KEY)</string>
 	<key>SupabaseHost</key>
@@ -67,5 +69,7 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>VercelToken</key>
+	<string>$(VERCEL_TOKEN)</string>
 </dict>
 </plist>

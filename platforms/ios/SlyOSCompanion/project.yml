@@ -62,6 +62,10 @@ targets:
         GoogleOAuthClientID: $(GOOGLE_OAUTH_CLIENT_ID)
         SupabaseHost: $(SUPABASE_HOST)
         SupabaseAnonKey: $(SUPABASE_ANON_KEY)
+        # Site hosting. Belto-owned so the owner needs no account — a generated page that has to be
+        # deployed by hand is a text file with extra steps.
+        NetlifyToken: $(NETLIFY_TOKEN)
+        VercelToken: $(VERCEL_TOKEN)
     configFiles:
       Debug: Secrets.xcconfig
       Release: Secrets.xcconfig

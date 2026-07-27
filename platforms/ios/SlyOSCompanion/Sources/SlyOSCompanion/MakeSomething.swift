@@ -8,11 +8,15 @@ import Foundation
 enum MakeSomething {
 
     enum Kind: String, CaseIterable {
-        case doc, sheet, slides
+        case doc, sheet, slides, site, pdf
 
         /// What the owner's phrasing suggests they want.
         static func detect(in prompt: String) -> Kind? {
             let p = prompt.lowercased()
+            // Site before deck: "landing page" contains neither, but "pitch site" contains both.
+            if ["website", "landing page", "web page", "webpage", "site for", "a site"]
+                .contains(where: p.contains) { return .site }
+            if ["pdf", "one-pager", "onepager"].contains(where: p.contains) { return .pdf }
             if ["deck", "slides", "presentation", "pitch"].contains(where: p.contains) { return .slides }
             if ["sheet", "spreadsheet", "table", "budget", "tracker", "csv"].contains(where: p.contains) { return .sheet }
             if ["doc", "document", "letter", "proposal", "memo", "write up", "write-up", "report",
@@ -25,12 +29,22 @@ enum MakeSomething {
             case .doc: "document"
             case .sheet: "spreadsheet"
             case .slides: "deck"
+            case .site: "website"
+            case .pdf: "PDF"
             }
         }
     }
 
+    /// What was made and where to find it.
+    struct Made {
+        let title: String
+        let url: String
+        /// A local file, when the thing is a PDF rather than something hosted.
+        var file: URL?
+    }
+
     /// Make the thing and return where it lives.
-    static func make(_ kind: Kind, from prompt: String) async throws -> GoogleWorkspace.Made {
+    static func make(_ kind: Kind, from prompt: String) async throws -> Made {
         let context = AgentClient.corpus(for: prompt)
         let profile = SlyProfile.shared.fullProfile(limit: 1_500)
 
@@ -48,11 +62,25 @@ enum MakeSomething {
         let title = firstLine(of: written, fallback: prompt)
         switch kind {
         case .doc:
-            return try await GoogleWorkspace.createDoc(title: title, body: strip(title, from: written))
+            let made = try await GoogleWorkspace.createDoc(title: title,
+                                                           body: strip(title, from: written))
+            return Made(title: made.title, url: made.url)
         case .sheet:
-            return try await GoogleWorkspace.createSheet(title: title, rows: table(from: written))
+            let made = try await GoogleWorkspace.createSheet(title: title, rows: table(from: written))
+            return Made(title: made.title, url: made.url)
         case .slides:
-            return try await GoogleWorkspace.createSlides(title: title, slides: deck(from: written))
+            let made = try await GoogleWorkspace.createSlides(title: title,
+                                                             slides: deck(from: written))
+            return Made(title: made.title, url: made.url)
+        case .site:
+            // Live and rendering, not a file to deploy later.
+            let published = try await SiteHost.publish(html: page(from: written), name: title)
+            return Made(title: title, url: published.url)
+        case .pdf:
+            let file = try PDFMaker.write(title: title,
+                                          body: strip(title, from: written),
+                                          author: SlyProfile.shared.value("full_name"))
+            return Made(title: title, url: file.absoluteString, file: file)
         }
     }
 
@@ -68,6 +96,15 @@ enum MakeSomething {
             "\n\nFirst line is the deck title, alone. Then one slide per block, separated by a line "
             + "containing only ---. Each block: the slide title on its first line, then its body. "
             + "Six slides at most, and keep bodies short enough to read from a back row."
+        case .site:
+            "\n\nFirst line is the page title, alone. Then a COMPLETE HTML document — doctype, head "
+            + "with styles inline in a <style> tag, and body. No markdown, no code fence, no "
+            + "explanation. It must render on its own with no external files, no CDN and no "
+            + "JavaScript frameworks. Make it genuinely handsome: real typography, generous "
+            + "spacing, and a layout that works on a phone."
+        case .pdf:
+            "\n\nFirst line is the title, alone. Then the document, using # for headings and - for "
+            + "bullets. Nothing else."
         }
     }
 
@@ -113,5 +150,26 @@ enum MakeSomething {
                 return (title: head.trimmingCharacters(in: CharacterSet(charactersIn: "# *")),
                         body: lines.dropFirst().joined(separator: "\n"))
             }
+    }
+}
+
+
+extension MakeSomething {
+    /// Pull the HTML out of what the model wrote.
+    ///
+    /// Models fence code even when told not to, and prepend a sentence even when told not to. Taking
+    /// from the first `<` to the last `>` survives both without needing them to comply.
+    static func page(from written: String) -> String {
+        let body = written.replacingOccurrences(of: "```html", with: "")
+            .replacingOccurrences(of: "```", with: "")
+        guard let start = body.firstIndex(of: "<"), let end = body.lastIndex(of: ">") else {
+            // No markup at all — wrap the prose so something renders rather than failing.
+            return "<!doctype html><meta charset=\"utf-8\">"
+                + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                + "<body style=\"font:16px/1.6 -apple-system,system-ui,sans-serif;max-width:44rem;"
+                + "margin:3rem auto;padding:0 1.25rem;color:#1A1714;background:#F4EFE6\">"
+                + body.replacingOccurrences(of: "\n", with: "<br>") + "</body>"
+        }
+        return String(body[start...end])
     }
 }

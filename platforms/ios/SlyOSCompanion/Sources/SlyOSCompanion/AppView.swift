@@ -71,6 +71,7 @@ struct HomePanel: View {
     @State private var reading = false
     @State private var lastQuery = ""
     @State private var pendingSend: ConfirmSend.Payload?
+    @State private var madeFile: URL?
     @State private var voice = VoiceInput.shared
     @State private var showScanner = false
     @State private var showLook = false
@@ -101,6 +102,10 @@ struct HomePanel: View {
             .ignoresSafeArea()
         }
         .fullScreenCover(isPresented: $reading) { ReaderView(text: answer) }
+        .sheet(item: Binding(get: { madeFile.map { FileToShare(url: $0) } },
+                             set: { madeFile = $0?.url })) { item in
+            ShareSheet(items: [item.url])
+        }
         .sheet(item: Binding(get: { pendingSend.map(IdentifiedPayload.init) },
                              set: { pendingSend = $0?.payload })) { wrapper in
             ConfirmSend(payload: wrapper.payload) { approved in
@@ -339,7 +344,13 @@ struct HomePanel: View {
                 // "write me a proposal" should produce a document, not a description of one.
                 if let kind = MakeSomething.Kind.detect(in: asked), GoogleAuth.shared.isConnected {
                     let made = try await MakeSomething.make(kind, from: asked)
-                    answer = "Made your \(kind.noun): \(made.title)\n\n\(made.url)"
+                    if let file = made.file {
+                        // A PDF is a file, so it gets the share sheet rather than a link.
+                        madeFile = file
+                        answer = "Made your \(kind.noun): **\(made.title)**"
+                    } else {
+                        answer = "Made your \(kind.noun): **\(made.title)**\n\n\(made.url)"
+                    }
                     thinking = false
                     appState.remember(title: made.title, body: "\(kind.noun) — \(made.url)",
                                       source: "Google")
@@ -465,4 +476,21 @@ struct IdentifiedPayload: Identifiable {
     let id = UUID()
     let payload: ConfirmSend.Payload
     init(_ payload: ConfirmSend.Payload) { self.payload = payload }
+}
+
+
+/// A file the owner just made, on its way to the share sheet.
+struct FileToShare: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+/// The system share sheet, so a PDF can go wherever it needs to.
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }

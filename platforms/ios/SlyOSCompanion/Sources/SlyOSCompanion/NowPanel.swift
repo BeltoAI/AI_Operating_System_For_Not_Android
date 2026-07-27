@@ -158,6 +158,8 @@ final class NowFeed {
 struct NowPanel: View {
     @Environment(\.palette) private var p
     @State private var feed = NowFeed()
+    @State private var mail = MailWatch.shared
+    @State private var replying: ConfirmSend.Payload?
     @State private var showOutbox = false
     @State private var showReconnect = false
 
@@ -172,6 +174,7 @@ struct NowPanel: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
+                        mailSection.padding(.top, T.lg)
                         digestCard.padding(.top, T.lg)
                         if feed.items.isEmpty { emptyState } else { list }
                     }
@@ -184,6 +187,13 @@ struct NowPanel: View {
         }
         .padding(.horizontal, T.md)
         .task { await feed.load() }
+        .task { await mail.refresh() }
+        .sheet(item: Binding(get: { replying.map(IdentifiedPayload.init) },
+                             set: { replying = $0?.payload })) { wrapper in
+            ConfirmSend(payload: wrapper.payload) { approved in
+                Task { _ = await ActionRouter.sendApproved(approved) }
+            }
+        }
         .sheet(isPresented: $showOutbox) { OutboxView() }
         .sheet(isPresented: $showReconnect) { ReconnectView() }
     }
@@ -202,6 +212,98 @@ struct NowPanel: View {
             }
         }
         .padding(.top, T.md)
+    }
+
+    /// Mail that needs answering, with the reply already written.
+    ///
+    /// The one automatic inbox iOS permits, and the reason to open this screen at all: the replies
+    /// are drafted before you look, so the work is approving rather than writing.
+    @ViewBuilder
+    private var mailSection: some View {
+        if !mail.items.isEmpty || mail.loading {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionHeader(title: "NEEDS A REPLY · \(mail.items.count)") {
+                    if mail.loading { SlyOrbit(size: 12) }
+                    else {
+                        Text("↻").font(.system(size: T.small)).foregroundStyle(p.accent)
+                            .padding(4)
+                            .onTapGesture { Task { await mail.refresh() } }
+                    }
+                }
+
+                ForEach(mail.items) { item in
+                    SlyCard(onOpen: { replying = mail.payload(for: item) },
+                            onClose: { mail.dismiss(item) }) {
+                        mailCard(item)
+                    }
+                }
+            }
+            .padding(.bottom, T.sm)
+        }
+    }
+
+    private func mailCard(_ item: MailWatch.Item) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 12) {
+                SlyAvatar(name: item.from, tint: .hex(0xD44638), badge: "envelope.fill")
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text(item.from)
+                            .font(.system(size: T.body)).foregroundStyle(p.ink).lineLimit(1)
+                        Spacer()
+                        Text(item.received.formatted(.relative(presentation: .numeric)))
+                            .font(.system(size: T.caption)).foregroundStyle(p.inkFaint)
+                    }
+                    Text(item.subject)
+                        .font(.system(size: T.small)).foregroundStyle(p.inkSoft).lineLimit(1)
+                    if let flag = item.flag {
+                        Text(flag)
+                            .font(.system(size: T.caption)).foregroundStyle(p.accent)
+                    }
+                    Text(item.snippet)
+                        .font(.system(size: T.small)).foregroundStyle(p.inkSoft).lineLimit(2)
+                }
+            }
+            .padding(14)
+
+            // The draft, which is the whole point.
+            Group {
+                if item.drafting {
+                    SlyWaiting("writing your reply")
+                } else if let draft = item.draft, !draft.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(draft)
+                            .font(.system(size: T.small)).foregroundStyle(p.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(p.bg))
+
+                        HStack(spacing: 10) {
+                            Button {
+                                replying = mail.payload(for: item)
+                            } label: {
+                                Text("Review & send")
+                                    .font(.system(size: T.small, weight: .medium))
+                                    .foregroundStyle(p.bgElevated)
+                                    .padding(.horizontal, T.md).padding(.vertical, 8)
+                                    .background(Capsule().fill(p.accent))
+                            }
+                            Button {
+                                UIPasteboard.general.string = draft
+                            } label: {
+                                Text("Copy")
+                                    .font(.system(size: T.small)).foregroundStyle(p.accent)
+                                    .padding(.horizontal, T.md).padding(.vertical, 8)
+                                    .background(Capsule().fill(p.hairline))
+                            }
+                            Spacer()
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 14).padding(.bottom, 14)
+        }
     }
 
     /// "WHAT YOU MISSED" — a written summary of the day so far, on demand.
