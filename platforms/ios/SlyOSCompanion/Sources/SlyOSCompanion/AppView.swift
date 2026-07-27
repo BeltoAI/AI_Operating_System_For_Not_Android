@@ -70,6 +70,7 @@ struct HomePanel: View {
     @State private var answerHeight: CGFloat = 0
     @State private var reading = false
     @State private var lastQuery = ""
+    @State private var pendingSend: ConfirmSend.Payload?
     @State private var voice = VoiceInput.shared
     @State private var showScanner = false
     @State private var showLook = false
@@ -100,6 +101,16 @@ struct HomePanel: View {
             .ignoresSafeArea()
         }
         .fullScreenCover(isPresented: $reading) { ReaderView(text: answer) }
+        .sheet(item: Binding(get: { pendingSend.map(IdentifiedPayload.init) },
+                             set: { pendingSend = $0?.payload })) { wrapper in
+            ConfirmSend(payload: wrapper.payload) { approved in
+                Task {
+                    thinking = true
+                    answer = await ActionRouter.sendApproved(approved)
+                    thinking = false
+                }
+            }
+        }
         .photosPicker(isPresented: $showPhotoPicker, selection: $pickedPhoto, matching: .images)
         .onChange(of: pickedPhoto) { _, item in
             guard let item else { return }
@@ -351,8 +362,14 @@ struct HomePanel: View {
                         tier: .standard)
 
                     let outcome = await ActionRouter.perform(intent, draft: draft)
-                    answer = outcome.text
                     thinking = false
+                    // Anything outbound is read and approved first.
+                    if let proposal = outcome.confirm {
+                        pendingSend = proposal
+                        answer = ""
+                    } else {
+                        answer = outcome.text
+                    }
                     appState.remember(title: asked, body: draft, source: "Draft")
                     return
                 }
@@ -439,4 +456,12 @@ private struct ScrollIfNeeded: ViewModifier {
 func dismissKeyboard() {
     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                     to: nil, from: nil, for: nil)
+}
+
+
+/// `sheet(item:)` needs identity; a payload is a plain struct.
+struct IdentifiedPayload: Identifiable {
+    let id = UUID()
+    let payload: ConfirmSend.Payload
+    init(_ payload: ConfirmSend.Payload) { self.payload = payload }
 }

@@ -60,6 +60,11 @@ enum ActionRouter {
 
         let recipient = person(in: prompt)
 
+        // Calendar first: "send Joslyn an invite" is a calendar action, not a message, and the
+        // absence of this case is why "create a Meet" produced a sentence and no event.
+        if ["meet", "invite", "schedule", "calendar", "book ", "set up a call"].contains(where: p.contains) {
+            return Intent(channel: .calendar, recipient: recipient, instruction: prompt)
+        }
         if p.contains("whatsapp") { return Intent(channel: .whatsapp(to: recipient), recipient: recipient, instruction: prompt) }
         if p.contains("telegram") { return Intent(channel: .telegram(to: recipient), recipient: recipient, instruction: prompt) }
         if p.contains("email") || p.contains("mail ") { return Intent(channel: .email(to: recipient), recipient: recipient, instruction: prompt) }
@@ -70,6 +75,28 @@ enum ActionRouter {
     }
 
     /// Best guess at who is being addressed — the word after "to", or a capitalised name.
+    /// A calendar request needs a time. Vague ones are asked about rather than guessed at — an
+    /// event at the wrong hour, emailed to someone, is worse than a question.
+    static func when(in prompt: String) -> (start: Date, end: Date)? {
+        let p = prompt.lowercased()
+        var day = Date()
+        if p.contains("tomorrow") { day = Calendar.current.date(byAdding: .day, value: 1, to: day) ?? day }
+
+        guard let m = p.firstMatch(#"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?"#) else { return nil }
+        var hour = Int(m[1]) ?? 0
+        let minute = Int(m[2]) ?? 0
+        let meridiem = m[3]
+        if meridiem == "pm", hour < 12 { hour += 12 }
+        if meridiem == "am", hour == 12 { hour = 0 }
+        // No am/pm on a small number: assume the working day rather than the small hours.
+        if meridiem.isEmpty, hour < 8 { hour += 12 }
+
+        var parts = Calendar.current.dateComponents([.year, .month, .day], from: day)
+        parts.hour = hour; parts.minute = minute
+        guard let start = Calendar.current.date(from: parts) else { return nil }
+        return (start, start.addingTimeInterval(3600))
+    }
+
     private static func person(in prompt: String) -> String {
         if let m = prompt.firstMatch(#"(?i)\b(?:to|message|text|tell)\s+([A-Z][\w'-]+)"#) { return m[1] }
         if let m = prompt.firstMatch(#"\b([A-Z][a-z]{2,})\b"#) { return m[1] }
@@ -80,6 +107,33 @@ enum ActionRouter {
         let text: String
         /// True only when something actually left the phone.
         let didSomething: Bool
+        /// Set when the action needs the owner to read and approve it first.
+        var confirm: ConfirmSend.Payload?
+    }
+
+    /// Actually send an email the owner has just approved.
+    static func sendApproved(_ payload: ConfirmSend.Payload) async -> String {
+        do {
+            try await Gmail.send(to: payload.recipient,
+                                 subject: payload.subject ?? "",
+                                 body: payload.body)
+            Outbox.shared.record(what: "Email to \(payload.recipient)",
+                                 detail: payload.subject ?? "", outcome: "sent")
+            return "Sent to \(payload.recipient)."
+        } catch {
+            Outbox.shared.record(what: "Email to \(payload.recipient)",
+                                 detail: error.localizedDescription, outcome: "failed")
+            return "Couldn't send it — \(error.localizedDescription)"
+        }
+    }
+
+    /// Models like writing "To:" and "Subject:" into the body. Left in, the recipient sees them
+    /// twice.
+    private static func stripHeaders(from draft: String) -> String {
+        draft.split(separator: "\n", omittingEmptySubsequences: false)
+            .drop { $0.firstMatch(#"(?i)^(to|subject|from|cc):"#) != nil || $0.isEmpty }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Carry out what can be carried out, and be honest about the rest.
@@ -94,16 +148,16 @@ enum ActionRouter {
                 return Outcome(text: "I don't have an email address for \(intent.recipient). Here's "
                                + "the draft:\n\n\(draft)", didSomething: false)
             }
-            do {
-                try await Gmail.send(to: address, subject: subject(of: draft), body: draft)
-                Outbox.shared.record(what: "Email to \(address)", detail: subject(of: draft), outcome: "sent")
-                return Outcome(text: "Sent to \(address).\n\n\(draft)", didSomething: true)
-            } catch {
-                Outbox.shared.record(what: "Email to \(address)", detail: error.localizedDescription,
-                                     outcome: "failed")
-                return Outcome(text: "Couldn't send it — \(error.localizedDescription)\n\n\(draft)",
-                               didSomething: false)
-            }
+            // Proposed, never sent outright. An email is not undoable, and the one time the
+            // address or the wording is wrong there is no recovering it.
+            return Outcome(
+                text: "",
+                didSomething: false,
+                confirm: ConfirmSend.Payload(
+                    recipient: address,
+                    subject: subject(of: draft),
+                    body: stripHeaders(from: draft),
+                    action: "Email \(intent.recipient.isEmpty ? address : intent.recipient)"))
 
         case .whatsapp, .telegram:
             // The honest case, and the one that was lying before.
@@ -125,7 +179,40 @@ enum ActionRouter {
                                didSomething: false)
             }
 
-        case .sms, .unknown, .calendar:
+        case .calendar:
+            guard GoogleAuth.shared.isConnected else {
+                return Outcome(text: notConnected("Google", draft: draft), didSomething: false)
+            }
+            guard let slot = when(in: intent.instruction) else {
+                return Outcome(text: "**Nothing created** — I need a time. Say when, and I'll make "
+                               + "the event and send the invite.", didSomething: false)
+            }
+            let guests = intent.recipient.isEmpty
+                ? []
+                : [await lookUpEmail(for: intent.recipient)].compactMap { $0 }
+            do {
+                let event = try await GoogleCalendar.create(
+                    title: title(from: intent.instruction),
+                    start: slot.start, end: slot.end,
+                    attendees: guests, withMeet: true)
+
+                let who = guests.isEmpty ? "nobody else" : guests.joined(separator: ", ")
+                Outbox.shared.record(what: "Calendar invite — \(event.title)",
+                                     detail: "\(slot.start.formatted()) · invited \(who)",
+                                     outcome: "sent")
+                var text = "Created **\(event.title)** for \(slot.start.formatted(date: .abbreviated, time: .shortened))."
+                if !event.meetLink.isEmpty { text += "\n\nMeet: \(event.meetLink)" }
+                text += guests.isEmpty
+                    ? "\n\n**Nobody was invited** — I don't have an email address for \(intent.recipient)."
+                    : "\n\nInvite emailed to \(who)."
+                return Outcome(text: text, didSomething: true)
+            } catch {
+                Outbox.shared.record(what: "Calendar invite", detail: error.localizedDescription,
+                                     outcome: "failed")
+                return Outcome(text: "**Not created** — \(error.localizedDescription)", didSomething: false)
+            }
+
+        case .sms, .unknown:
             return Outcome(text: cannotSend(intent.channel, to: intent.recipient, draft: draft),
                            didSomething: false)
         }
@@ -151,6 +238,20 @@ enum ActionRouter {
 
     private static func notConnected(_ what: String, draft: String) -> String {
         "**Not sent** — connect \(what) in Settings first.\n\n\(draft)"
+    }
+
+    /// A usable event title from the request — the words minus the scheduling scaffolding.
+    private static func title(from prompt: String) -> String {
+        var t = prompt
+        for noise in ["create", "make", "set up", "schedule", "a ", "google meet", "meet", "invite",
+                      "with", "for", "please", "tomorrow", "today"] {
+            t = t.replacingOccurrences(of: noise, with: " ", options: [.caseInsensitive])
+        }
+        t = t.replacingOccurrences(of: #"\d{1,2}(:\d{2})?\s*(am|pm)?"#, with: " ",
+                                   options: [.regularExpression, .caseInsensitive])
+        let cleaned = t.replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? "Meeting" : String(cleaned.prefix(60))
     }
 
     private static func subject(of draft: String) -> String {

@@ -166,7 +166,24 @@ enum AgentClient {
     private static func profileBlock() -> String {
         let profile = SlyProfile.shared.fullProfile()
         guard !profile.isEmpty else { return "" }
-        return "\n\nWHO YOU ARE SPEAKING FOR:\n\(profile)"
+        let name = SlySettings.shared.name.isEmpty ? "the owner" : SlySettings.shared.name
+
+        // The fencing matters. Without it the model read "About me: age 26, born September 7 1999"
+        // and handed those details back as someone else's — it told the owner his wife's birthday,
+        // and gave him his own. Details about a third party must come from the recalled memories
+        // or not at all.
+        return """
+
+
+            ── THESE FACTS ARE ABOUT \(name.uppercased()), THE OWNER OF THIS PHONE ──
+            \(profile)
+            ── end of the owner's own details ──
+
+            Those belong to \(name) and to nobody else. When asked about another person, use only
+            what the recalled memories say about *that* person. Never borrow the owner's age,
+            birthday, address, job or contact details for someone else, and if the memories do not
+            say, answer that you do not know rather than filling the gap.
+            """
     }
 
     /// Where the owner is, added only when the question implies it matters.
@@ -190,7 +207,23 @@ enum AgentClient {
             .contains { q.contains($0) }
         guard asks, let resolver = agendaResolver, let agenda = await resolver(),
               !agenda.isEmpty else { return "" }
-        return "\n\nWHAT IS ACTUALLY ON — read from the calendar just now:\n\(agenda)"
+
+        // Stated as exclusive, and it has to be. The brain also holds imported calendar events —
+        // a year of them — and without this the model blends a meeting from last March into "what's
+        // on today" and reports it with a straight face. This block was read from the calendar a
+        // second ago; the stored ones are history.
+        return """
+
+
+            ── WHAT IS ON, READ FROM THE CALENDAR JUST NOW ──
+            \(agenda)
+            ── end ──
+
+            That list is complete and current. Answer scheduling questions from it and from nothing
+            else: any event in the recalled memories is a past record, not something upcoming, and
+            must not be reported as being on today or tomorrow. If the list is empty, say nothing is
+            on rather than reaching for an older one.
+            """
     }
 
     /// Resolves the owner's location, injected by the app at launch.
