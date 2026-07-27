@@ -377,7 +377,8 @@ struct HomePanel: View {
                 // Off the main actor: the network call is the whole reason the Android Memory tab
                 // used to fail with "-1 couldn't search".
                 let reply = try await AgentClient.ask(asked)
-                answer = reply
+                // Nothing ran on this path, so nothing in the reply may imply otherwise.
+                answer = ActionRouter.correctIfItClaimed(reply)
                 thinking = false
                 // Keep the answer too, so the brain remembers what it told you.
                 appState.remember(title: asked, body: reply, source: "SlyOS")

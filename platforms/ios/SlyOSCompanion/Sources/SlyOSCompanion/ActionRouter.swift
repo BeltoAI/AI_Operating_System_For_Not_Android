@@ -55,16 +55,23 @@ enum ActionRouter {
     /// asked for.
     static func detect(_ prompt: String) -> Intent? {
         let p = prompt.lowercased()
-        let verbs = ["send", "message", "write to", "text", "email", "reply to", "tell "]
-        guard verbs.contains(where: p.contains) else { return nil }
-
         let recipient = person(in: prompt)
 
-        // Calendar first: "send Joslyn an invite" is a calendar action, not a message, and the
-        // absence of this case is why "create a Meet" produced a sentence and no event.
-        if ["meet", "invite", "schedule", "calendar", "book ", "set up a call"].contains(where: p.contains) {
+        // Calendar is checked FIRST and has its own vocabulary.
+        //
+        // It used to sit behind a messaging verb gate — "send", "email", "tell" — so "block my
+        // calendar 6 to 6:30" and "create a Meet and invite Joslyn" never reached it and fell
+        // through to prose that claimed the thing was done. The calendar branch was unreachable by
+        // the very phrasings people actually use for it.
+        let calendarWords = ["meet", "invite", "schedule", "calendar", "book ", "blocker",
+                             "block my", "block out", "set up a call", "appointment", "event"]
+        if calendarWords.contains(where: p.contains) {
             return Intent(channel: .calendar, recipient: recipient, instruction: prompt)
         }
+
+        let verbs = ["send", "message", "write to", "text ", "email", "reply to", "tell ", "dm "]
+        guard verbs.contains(where: p.contains) else { return nil }
+
         if p.contains("whatsapp") { return Intent(channel: .whatsapp(to: recipient), recipient: recipient, instruction: prompt) }
         if p.contains("telegram") { return Intent(channel: .telegram(to: recipient), recipient: recipient, instruction: prompt) }
         if p.contains("email") || p.contains("mail ") { return Intent(channel: .email(to: recipient), recipient: recipient, instruction: prompt) }
@@ -94,6 +101,19 @@ enum ActionRouter {
         var parts = Calendar.current.dateComponents([.year, .month, .day], from: day)
         parts.hour = hour; parts.minute = minute
         guard let start = Calendar.current.date(from: parts) else { return nil }
+
+        // "6 to 6:30" states its own end. Defaulting to an hour would silently book twice the time
+        // the owner asked to block.
+        if let range = p.firstMatch(#"(?:to|until|till|-|–)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?"#) {
+            var endHour = Int(range[1]) ?? hour
+            let endMinute = Int(range[2]) ?? 0
+            let endMeridiem = range[3]
+            if endMeridiem == "pm", endHour < 12 { endHour += 12 }
+            if endMeridiem.isEmpty, endHour < hour { endHour += 12 }   // 6 to 6:30 pm
+            var endParts = parts
+            endParts.hour = endHour; endParts.minute = endMinute
+            if let end = Calendar.current.date(from: endParts), end > start { return (start, end) }
+        }
         return (start, start.addingTimeInterval(3600))
     }
 
@@ -187,7 +207,9 @@ enum ActionRouter {
                 return Outcome(text: "**Nothing created** — I need a time. Say when, and I'll make "
                                + "the event and send the invite.", didSomething: false)
             }
-            let guests = intent.recipient.isEmpty
+            // "Block my calendar" is for the owner alone — inviting someone to it would be absurd.
+            let blocker = intent.instruction.lowercased().contains("block")
+            let guests = (blocker || intent.recipient.isEmpty)
                 ? []
                 : [await lookUpEmail(for: intent.recipient)].compactMap { $0 }
             do {
@@ -202,9 +224,12 @@ enum ActionRouter {
                                      outcome: "sent")
                 var text = "Created **\(event.title)** for \(slot.start.formatted(date: .abbreviated, time: .shortened))."
                 if !event.meetLink.isEmpty { text += "\n\nMeet: \(event.meetLink)" }
-                text += guests.isEmpty
-                    ? "\n\n**Nobody was invited** — I don't have an email address for \(intent.recipient)."
-                    : "\n\nInvite emailed to \(who)."
+                if !guests.isEmpty {
+                    text += "\n\nInvite emailed to \(who)."
+                } else if !blocker && !intent.recipient.isEmpty {
+                    text += "\n\n**Nobody was invited** — I don't have an email address for "
+                        + "\(intent.recipient)."
+                }
                 return Outcome(text: text, didSomething: true)
             } catch {
                 Outbox.shared.record(what: "Calendar invite", detail: error.localizedDescription,
@@ -216,6 +241,31 @@ enum ActionRouter {
             return Outcome(text: cannotSend(intent.channel, to: intent.recipient, draft: draft),
                            didSomething: false)
         }
+    }
+
+    /// The last line of defence against the app claiming to have done something.
+    ///
+    /// Twice now a request slipped past detection and the model answered "Creating Google Meet now.
+    /// Inviting Joslyn." — a sentence, and nothing else. Every individual cause has been fixed and
+    /// each time another phrasing found its way through, so the guard belongs at the end rather than
+    /// in the matching: if nothing ran, no answer may read as though something did.
+    ///
+    /// It corrects rather than hides. Deleting the model's text would lose the draft it wrote.
+    static func correctIfItClaimed(_ answer: String) -> String {
+        let a = answer.lowercased()
+        let claims = ["i'll send", "i will send", "sending ", "i've sent", "i have sent", "sent it",
+                      "creating ", "i'll create", "i've created", "i'll add", "adding it",
+                      "inviting ", "i'll invite", "i've invited", "scheduling ", "i'll schedule",
+                      "booking ", "done —", "done."]
+        guard claims.contains(where: a.contains) else { return answer }
+
+        return """
+            **Nothing was actually done.** What follows is only a draft — nothing was sent, created
+            or scheduled. If you meant it as an instruction, say it again more plainly — for example
+            "block my calendar 6pm to 6:30pm today" — and I'll do it for real.
+
+            \(answer)
+            """
     }
 
     // MARK: - Honest copy
