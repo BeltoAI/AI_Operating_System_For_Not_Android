@@ -41,7 +41,7 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>SlyOS saves a document or image to your photos only when you ask it to.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>SlyOS reads photos you explicitly choose for Look, document, receipt, and memory workflows.</string>
+	<string>SlyOS reads your photos on this phone so you can ask for them later — the receipt you photographed, the sign with the wifi password. Reading happens entirely on-device and no photo is ever uploaded.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>SlyOS reads and writes reminders only for reminder workflows you explicitly request.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

@@ -31,6 +31,8 @@ final class MailWatch {
         var drafting = false
         /// Why this one matters, when the brain knows something about it.
         var flag: String?
+        /// Sent by a system rather than a person — shown on the card, and never drafted to.
+        var automated = false
     }
 
     private(set) var items: [Item] = []
@@ -111,6 +113,14 @@ final class MailWatch {
             return nil
         }
 
+        // Human or machine, decided before anything is written.
+        //
+        // The headers above catch mailing lists, and nothing else: a booking confirmation, a
+        // verification code and a receipt all arrive as ordinary mail from an address that cannot
+        // receive an answer. They belong in the queue — they are often the thing that matters — but
+        // drafting a reply in the owner's voice to no-reply@ is a wasted call and slightly absurd.
+        let automated = isAutomated(from: from, subject: subject)
+
         let millis = Double(json["internalDate"] as? String ?? "") ?? 0
         let snippet = (json["snippet"] as? String ?? "")
             .replacingOccurrences(of: "&#39;", with: "'")
@@ -123,7 +133,8 @@ final class MailWatch {
                     subject: subject,
                     snippet: snippet,
                     received: Date(timeIntervalSince1970: millis / 1000),
-                    flag: flag(for: displayName(from)))
+                    flag: flag(for: displayName(from)),
+                    automated: automated)
     }
 
     /// What the brain knows that changes how urgent this is.
@@ -141,10 +152,30 @@ final class MailWatch {
 
     // MARK: - Drafting
 
+    /// A sender that is a system rather than a person.
+    ///
+    /// Read from the address and the subject, because that is where a machine announces itself. The
+    /// body would say so too, but the snippet Gmail returns is short enough that "unsubscribe" and
+    /// "do not reply" routinely fall outside it.
+    private func isAutomated(from: String, subject: String) -> Bool {
+        let address = address(from).lowercased()
+        let local = String(address.prefix { $0 != "@" })
+        let robotic = ["no-reply", "noreply", "donotreply", "do-not-reply", "notification",
+                       "notifications", "alerts", "alert", "mailer", "postmaster", "billing",
+                       "receipts", "invoices", "support", "updates", "automated", "bounce"]
+        if robotic.contains(where: { local.contains($0) }) { return true }
+
+        let s = subject.lowercased()
+        return ["verification code", "verify your", "one-time code", "security code",
+                "password reset", "confirm your email", "your receipt", "your invoice",
+                "your order", "statement is ready", "do not reply"]
+            .contains { s.contains($0) }
+    }
+
     @MainActor
     private func draftAll() async {
         for index in items.indices {
-            guard items[index].draft == nil else { continue }
+            guard items[index].draft == nil, !items[index].automated else { continue }
             items[index].drafting = true
             let item = items[index]
 

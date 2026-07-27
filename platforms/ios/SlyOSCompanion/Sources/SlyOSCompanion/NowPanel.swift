@@ -254,8 +254,19 @@ struct NowPanel: View {
                         Text(item.received.formatted(.relative(presentation: .numeric)))
                             .font(.system(size: T.caption)).foregroundStyle(p.inkFaint)
                     }
-                    Text(item.subject)
-                        .font(.system(size: T.small)).foregroundStyle(p.inkSoft).lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(item.subject)
+                            .font(.system(size: T.small)).foregroundStyle(p.inkSoft).lineLimit(1)
+                        // Human or machine, before you read a word of it. Automated mail still
+                        // appears — a booking or a code is often the thing that matters — it just
+                        // gets no reply written to an address that cannot receive one.
+                        Text(item.automated ? "automated" : "person")
+                            .font(.system(size: T.caption))
+                            .foregroundStyle(item.automated ? p.inkFaint : p.accent)
+                            .padding(.horizontal, 6).padding(.vertical, 1)
+                            .background(Capsule().fill(item.automated ? p.hairline
+                                                                      : p.accent.opacity(0.16)))
+                    }
                     if let flag = item.flag {
                         Text(flag)
                             .font(.system(size: T.caption)).foregroundStyle(p.accent)
@@ -268,7 +279,11 @@ struct NowPanel: View {
 
             // The draft, which is the whole point.
             Group {
-                if item.drafting {
+                if item.automated {
+                    Text("No reply drafted — this came from a system, not a person.")
+                        .font(.system(size: T.caption)).foregroundStyle(p.inkFaint)
+                        .padding(.horizontal, 14).padding(.bottom, 12)
+                } else if item.drafting {
                     SlyWaiting("writing your reply")
                 } else if let draft = item.draft, !draft.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {

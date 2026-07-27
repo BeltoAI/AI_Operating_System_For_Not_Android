@@ -24,7 +24,8 @@ enum SiteHost {
         var errorDescription: String? {
             switch self {
             case .notConfigured:
-                "Site hosting isn't set up in this build — add a Netlify or Vercel token."
+                "Site hosting needs a Netlify or Vercel token — add one in Settings. Both are "
+                + "free, and the site lands in your own account."
             case .tooShort:
                 "There wasn't enough page to publish."
             case .api(let host, let code, let body):
@@ -33,8 +34,36 @@ enum SiteHost {
         }
     }
 
+    /// Where the owner's own tokens live. Keychain rather than defaults: these deploy to their
+    /// account and are worth as much as a password.
+    private static let keychain = Keychain(service: "com.belto.slyos.hosting")
+
+    static var netlifyToken: String {
+        get { keychain.string(for: "netlify") ?? "" }
+        set {
+            newValue.isEmpty ? keychain.remove("netlify")
+                             : keychain.set(newValue, for: "netlify")
+        }
+    }
+
+    static var vercelToken: String {
+        get { keychain.string(for: "vercel") ?? "" }
+        set {
+            newValue.isEmpty ? keychain.remove("vercel")
+                             : keychain.set(newValue, for: "vercel")
+        }
+    }
+
+    /// The owner's own token first, then anything baked into the build.
+    ///
+    /// The comment above has always promised this and the code never did it — `token()` read the
+    /// Info.plist and nothing else, so a public build with no baked token could not publish at all
+    /// and offered no way to fix that. Sites now land in the owner's own account, which is also
+    /// where they belong: a page hosted on somebody else's token disappears when that token does.
     private static func token(_ key: String) -> String {
-        Bundle.main.object(forInfoDictionaryKey: key) as? String ?? ""
+        let mine = key == "NetlifyToken" ? netlifyToken : vercelToken
+        if !mine.isEmpty { return mine }
+        return Bundle.main.object(forInfoDictionaryKey: key) as? String ?? ""
     }
 
     static var isAvailable: Bool {

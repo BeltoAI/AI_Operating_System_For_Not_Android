@@ -49,7 +49,7 @@ targets:
         NSCameraUsageDescription: SlyOS uses the camera when you open Look mode to identify, read, and remember what you point at.
         NSMicrophoneUsageDescription: SlyOS uses the microphone only when you choose voice input or a voice workflow.
         NSSpeechRecognitionUsageDescription: SlyOS transcribes speech only after you tap the voice control.
-        NSPhotoLibraryUsageDescription: SlyOS reads photos you explicitly choose for Look, document, receipt, and memory workflows.
+        NSPhotoLibraryUsageDescription: SlyOS reads your photos on this phone so you can ask for them later — the receipt you photographed, the sign with the wifi password. Reading happens entirely on-device and no photo is ever uploaded.
         NSPhotoLibraryAddUsageDescription: SlyOS saves a document or image to your photos only when you ask it to.
         NSCalendarsFullAccessUsageDescription: SlyOS reads your calendar only when you ask about your schedule and writes events only after a confirmed request.
         NSRemindersFullAccessUsageDescription: SlyOS reads and writes reminders only for reminder workflows you explicitly request.

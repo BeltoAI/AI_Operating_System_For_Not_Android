@@ -118,6 +118,16 @@ final class SelfTest {
                 : (.fail, "came back almost empty — answers will be ungrounded")
         }
 
+        await record("Brain", "Photos") {
+            guard PhotoIndex.isAuthorised else {
+                return (.skip, "photo access is off — turn it on in Settings → Your photos")
+            }
+            let n = PhotoIndex.count
+            return n > 0
+                ? (.pass, "\(n.formatted()) read on this phone, nothing uploaded")
+                : (.skip, "none read yet — Settings → Your photos")
+        }
+
         await record("Brain", "Learned facts") {
             let n = Distiller.facts.count
             return n > 0

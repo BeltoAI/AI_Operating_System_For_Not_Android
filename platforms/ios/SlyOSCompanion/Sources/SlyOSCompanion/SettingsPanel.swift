@@ -112,6 +112,8 @@ struct SettingsPanel: View {
 
                     group("OPENCLAW", p: p) { OpenClawSection(palette: p) }
 
+                    group("WEBSITE HOSTING", p: p) { HostingSection(palette: p) }
+
                     group("ZENODO", p: p) { ZenodoSection(palette: p) }
 
                     group("YOUR CONVERSATIONS", p: p) { ChatImportSection(palette: p) }
@@ -125,6 +127,8 @@ struct SettingsPanel: View {
                             }
                         }
                     }
+
+                    group("YOUR PHOTOS", p: p) { PhotoSection(palette: p) }
 
                     group("IS IT WORKING?", p: p) { SelfTestSection(palette: p) }
 
@@ -911,5 +915,151 @@ private struct SelfTestSection: View {
         case .fail: palette.danger
         case .skip: palette.inkFaint
         }
+    }
+}
+
+
+/// Where a built website goes.
+///
+/// Public builds ship with no hosting token — deploying to a shared account would mean handing a
+/// real deploy credential to everyone who unzips the download — so the owner brings their own. Both
+/// services have a free tier that covers this, and the upside is that the site is genuinely theirs:
+/// it lives in their account and outlives anything about SlyOS.
+private struct HostingSection: View {
+    let palette: Palette
+    @State private var netlify = SiteHost.netlifyToken
+    @State private var vercel = SiteHost.vercelToken
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: T.sm) {
+            Text(SiteHost.isAvailable
+                 ? "Ask for a website and you get a live link. Sites publish to your own account."
+                 : "Ask for a website and SlyOS builds it — but it needs somewhere to put it. Add "
+                   + "one token below; the free tier covers this, and the site stays yours.")
+                .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            tokenRow("Netlify", link: "https://app.netlify.com/user/applications#personal-access-tokens",
+                     hint: "nfp_…", text: $netlify) { SiteHost.netlifyToken = $0 }
+            tokenRow("Vercel", link: "https://vercel.com/account/tokens",
+                     hint: "paste a token", text: $vercel) { SiteHost.vercelToken = $0 }
+        }
+    }
+
+    private func tokenRow(_ name: String, link: String, hint: String,
+                          text: Binding<String>, save: @escaping (String) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: T.xs) {
+            HStack(spacing: T.sm) {
+                Link(destination: URL(string: link)!) {
+                    Text(name)
+                        .font(.system(size: T.small, weight: .medium))
+                        .foregroundStyle(palette.bgElevated)
+                        .frame(width: 78)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(palette.accent))
+                }
+                SecureField("", text: text, prompt:
+                    Text(hint).foregroundStyle(palette.inkFaint))
+                    .font(.system(size: T.small))
+                    .foregroundStyle(palette.ink)
+                    .textFieldStyle(.plain)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .onChange(of: text.wrappedValue) { _, new in
+                        save(new.trimmingCharacters(in: .whitespacesAndNewlines))
+                    }
+                if !text.wrappedValue.isEmpty {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14)).foregroundStyle(palette.accent)
+                }
+            }
+            Rectangle().fill(palette.hairline).frame(height: 1)
+        }
+    }
+}
+
+
+/// Reading the camera roll into the brain.
+///
+/// Off until asked for, and undoable in one tap. This is the most personal thing SlyOS can be
+/// pointed at, so the screen says plainly what happens to the photographs — nothing leaves the
+/// phone, Vision runs locally — and offers the way back before asking for the way in.
+private struct PhotoSection: View {
+    let palette: Palette
+    @State private var indexed = PhotoIndex.count
+    @State private var working = false
+    @State private var note: String?
+    @State private var confirmingForget = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: T.sm) {
+            Text("SlyOS can read your photos so you can ask for them — the receipt you photographed, "
+                 + "the sign with the wifi password, the whiteboard from that meeting. It reads them "
+                 + "on this phone: no photo is ever uploaded, and it works with no API key.")
+                .font(.system(size: T.caption)).foregroundStyle(palette.inkFaint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: T.sm) {
+                Button {
+                    Task { await scan() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if working { SlyWaiting("reading") }
+                        else { Text(indexed == 0 ? "Read my photos" : "Read new photos")
+                                .font(.system(size: T.small, weight: .medium)) }
+                    }
+                    .foregroundStyle(palette.bgElevated)
+                    .padding(.horizontal, T.md).padding(.vertical, 9)
+                    .background(Capsule().fill(palette.accent))
+                }
+                .disabled(working)
+
+                if indexed > 0 {
+                    Button("Forget them", role: .destructive) { confirmingForget = true }
+                        .font(.system(size: T.small))
+                        .tint(palette.danger)
+                }
+                Spacer()
+            }
+
+            if indexed > 0 {
+                Text("\(indexed.formatted()) photo\(indexed == 1 ? "" : "s") in your brain. "
+                     + "Ask about one the way you'd describe it.")
+                    .font(.system(size: T.caption)).foregroundStyle(palette.inkSoft)
+            }
+            if let note {
+                Text(note).font(.system(size: T.caption)).foregroundStyle(palette.accent)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .alert("Forget your photos?", isPresented: $confirmingForget) {
+            Button("Forget", role: .destructive) {
+                PhotoIndex.forget()
+                indexed = 0
+                note = "Removed from your brain. Your photos themselves are untouched."
+            }
+            Button("Keep", role: .cancel) {}
+        } message: {
+            Text("Everything SlyOS read from your library is removed from the brain. The photos "
+                 + "themselves are not touched.")
+        }
+    }
+
+    private func scan() async {
+        working = true
+        note = nil
+        defer { working = false }
+
+        guard await PhotoIndex.requestAccess() else {
+            note = "Photo access is off — turn it on in iOS Settings and try again."
+            return
+        }
+        // A bounded pass rather than the whole library at once: a first run on forty thousand
+        // photographs would look like the app had hung.
+        let read = await PhotoIndex.indexRecent(seconds: 25)
+        indexed = PhotoIndex.count
+        note = read == 0
+            ? "Nothing new to read."
+            : "Read \(read) photo\(read == 1 ? "" : "s"). Tap again to keep going through your library."
     }
 }

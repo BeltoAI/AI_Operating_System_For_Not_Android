@@ -313,6 +313,23 @@ final class SlyStore {
         }
     }
 
+    /// Remove everything that came from one source.
+    ///
+    /// The undo for anything imported wholesale. Reading a camera roll into the brain has to be
+    /// reversible in one action, or turning it on is a decision nobody can take back.
+    @discardableResult
+    func deleteBySource(_ source: String) -> Int {
+        queue.sync {
+            var st: OpaquePointer?
+            guard sqlite3_prepare_v2(db, "DELETE FROM memories WHERE source = ?;", -1, &st, nil)
+                    == SQLITE_OK else { return 0 }
+            defer { sqlite3_finalize(st) }
+            sqlite3_bind_text(st, 1, source, -1, Self.transient)
+            guard sqlite3_step(st) == SQLITE_DONE else { return 0 }
+            return Int(sqlite3_changes(db))
+        }
+    }
+
     /// Names the brain actually holds, for resolving who a question is about.
     func knownPeople(limit: Int = 400) -> [String] {
         queue.sync {
