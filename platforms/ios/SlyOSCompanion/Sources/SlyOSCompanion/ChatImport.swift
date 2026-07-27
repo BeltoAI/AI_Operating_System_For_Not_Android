@@ -29,13 +29,28 @@ enum ChatImport {
                 + "WhatsApp has no bulk export."
             case .instagram:
                 "instagram.com → Settings → Your activity → Download your information → JSON. "
-                + "Arrives by email as a ZIP; unzip it and pick messages_1.json."
+                + "Arrives by email as a ZIP. Pick the ZIP itself — SlyOS reads every conversation in it."
             case .linkedin:
                 "linkedin.com → Settings → Data privacy → Get a copy of your data → pick Messages. "
-                + "Unzip and choose messages.csv."
+                + "Pick the ZIP itself when it arrives."
             case .telegram:
                 "Telegram Desktop → Settings → Advanced → Export Telegram data → Machine-readable "
                 + "JSON."
+            }
+        }
+
+
+        /// Which files inside an export actually hold messages.
+        ///
+        /// An Instagram archive is overwhelmingly photos and video, and inflating those to discard
+        /// them would spend the memory the messages need.
+        func wants(_ path: String) -> Bool {
+            let lower = path.lowercased()
+            switch self {
+            case .whatsapp:  return lower.hasSuffix(".txt")
+            case .instagram: return lower.hasSuffix(".json") && lower.contains("message")
+            case .linkedin:  return lower.hasSuffix(".csv") && lower.contains("message")
+            case .telegram:  return lower.hasSuffix(".json")
             }
         }
 
@@ -55,6 +70,12 @@ enum ChatImport {
     }
 
     /// Read whatever was picked and put it in the brain.
+    ///
+    /// The whole archive, if that is what was picked. Every one of these services hands you a zip —
+    /// Instagram's holds a `message_1.json` per conversation across hundreds of folders — and the
+    /// picker already offered `.zip`, but the parser then read the archive's raw bytes as text and
+    /// reported "nothing readable". Downloading exactly what the instructions said produced nothing,
+    /// which is the worst possible first five minutes.
     static func read(_ url: URL, as source: Source, ownerName: String) throws -> Result {
         // Files chosen from another app arrive security-scoped; without this the read fails with a
         // permission error that looks like a corrupt file.
@@ -62,13 +83,22 @@ enum ChatImport {
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
         let data = try Data(contentsOf: url)
-        let memories: [Memory]
+        var memories: [Memory] = []
 
-        switch source {
-        case .whatsapp:  memories = parseWhatsApp(String(decoding: data, as: UTF8.self), owner: ownerName)
-        case .instagram: memories = parseInstagram(data, owner: ownerName)
-        case .linkedin:  memories = parseLinkedIn(String(decoding: data, as: UTF8.self), owner: ownerName)
-        case .telegram:  memories = parseTelegram(data, owner: ownerName)
+        // "PK\u{03}\u{04}" — sniffed rather than taken from the extension, because a file saved from
+        // Mail or Drive frequently arrives named something else entirely.
+        if data.starts(with: [0x50, 0x4B, 0x03, 0x04]) {
+            let files = try Unzip.entries(in: data) { path in source.wants(path) }
+            guard !files.isEmpty else {
+                return Result(imported: 0, people: 0,
+                              note: "That archive has no \(source.rawValue) messages in it. "
+                                  + source.howTo)
+            }
+            for file in files {
+                memories += parse(file.data, as: source, owner: ownerName)
+            }
+        } else {
+            memories = parse(data, as: source, owner: ownerName)
         }
 
         guard !memories.isEmpty else {
@@ -81,6 +111,16 @@ enum ChatImport {
         return Result(imported: memories.count, people: people,
                       note: "\(memories.count.formatted()) messages from \(people) "
                           + (people == 1 ? "person" : "people") + ".")
+    }
+
+    /// One file's worth, whatever it came wrapped in.
+    private static func parse(_ data: Data, as source: Source, owner: String) -> [Memory] {
+        switch source {
+        case .whatsapp:  parseWhatsApp(String(decoding: data, as: UTF8.self), owner: owner)
+        case .instagram: parseInstagram(data, owner: owner)
+        case .linkedin:  parseLinkedIn(String(decoding: data, as: UTF8.self), owner: owner)
+        case .telegram:  parseTelegram(data, owner: owner)
+        }
     }
 
     // MARK: - WhatsApp
